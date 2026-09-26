@@ -1,0 +1,19 @@
+[project]
+name = "recruiter-mail-harvester"
+version = "0.1.0"
+description = "Collect recruiter email addresses from job portals (Naukri, LinkedIn) with Playwright"
+requires-python = ">=3.11"
+dependencies = ["playwright>=1.45"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+harvest = "harvester.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["harvester*"]
