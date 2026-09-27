@@ -1,6 +1,6 @@
 # Search profile. Edit any field; empty lists mean "no restriction".
 [profile]
-name = "Pankaj"
+name = "Example: Java developer"
 role = "Java Developer"
 experience_years = 5
 # Cities you would work in. A post naming only other cities is dropped.
@@ -10,5 +10,7 @@ skills = ["java", "spring", "microservice", "j2ee", "hibernate"]
 # A post mentioning any of these is dropped.
 exclude_keywords = ["ServiceNow", "SailPoint", "Guidewire", "Salesforce"]
 # Leave empty to generate queries from role + skills.
-linkedin_queries = ["hiring java developer share resume", "spring boot microservices hiring share resume", "java developer immediate joiner hiring email"]
-naukri_queries = ["java developer", "spring boot microservices"]
+linkedin_queries = []
+naukri_queries = []
+# Portals to search: linkedin, naukri.
+sources = ["linkedin", "naukri"]

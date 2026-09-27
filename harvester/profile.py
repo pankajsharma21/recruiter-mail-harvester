@@ -34,6 +34,12 @@ _CITY_RX = {city: re.compile(r"\b(" + "|".join(map(re.escape, names)) + r")\b", 
             for city, names in CITIES.items()}
 _ANYWHERE = re.compile(r"\b(remote|work from home|wfh|pan india|anywhere in india)\b", re.I)
 
+_GENERIC_TITLE_WORDS = {
+    "senior", "junior", "sr", "jr", "lead", "head", "associate", "assistant", "trainee",
+    "intern", "executive", "manager", "officer", "engineer", "developer", "specialist",
+    "analyst", "consultant", "coordinator", "staff", "and", "of", "the",
+}
+
 _YRS = r"(?:years?|yrs?)"
 _RANGE = re.compile(rf"\b(\d{{1,2}})\s*\+?\s*(?:-|–|to)\s*(\d{{1,2}})\s*\+?\s*{_YRS}", re.I)
 _PLUS = re.compile(rf"\b(?:minimum|min\.?|at least)?\s*(\d{{1,2}})\s*\+\s*{_YRS}", re.I)
@@ -68,6 +74,7 @@ class Profile:
     exclude_keywords: list[str] = field(default_factory=list)
     linkedin_queries: list[str] = field(default_factory=list)
     naukri_queries: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=lambda: ["linkedin", "naukri"])
 
     @classmethod
     def load(cls, path: Path) -> "Profile":
@@ -89,7 +96,15 @@ class Profile:
     # --- filters -----------------------------------------------------------
 
     def role_keywords(self) -> list[str]:
-        return self.skills or [self.role]
+        """What a post must mention. Without explicit skills, the role's own words:
+        "Sales Executive" -> ["sales executive", "sales"]. Generic words like
+        "executive" or "manager" alone would match almost every post, so they are skipped.
+        """
+        if self.skills:
+            return self.skills
+        words = [w for w in re.findall(r"[a-z0-9+#.]+", self.role.lower())
+                 if len(w) > 1 and w not in _GENERIC_TITLE_WORDS]
+        return list(dict.fromkeys([self.role.lower(), *words]))
 
     def check_experience(self, text: str) -> str | None:
         if self.experience_years is None:
@@ -140,4 +155,6 @@ def to_toml(p: Profile) -> str:
         f"# Leave empty to generate queries from role + skills.\n"
         f"linkedin_queries = {arr(p.linkedin_queries)}\n"
         f"naukri_queries = {arr(p.naukri_queries)}\n"
+        f"# Portals to search: linkedin, naukri.\n"
+        f"sources = {arr(p.sources)}\n"
     )

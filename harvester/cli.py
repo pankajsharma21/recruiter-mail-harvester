@@ -1,5 +1,6 @@
 """harvest - collect recruiter email addresses from job portals.
 
+    harvest                          open the setup screen (pick or add a person, then search)
     harvest init                     create a search profile (role, experience, cities)
     harvest profiles                 list profiles
     harvest login                    open the browser once and sign in to LinkedIn by hand
@@ -46,15 +47,11 @@ class Setup:
         return ROOT / "output" / self.profile_id / date.today().isoformat()
 
 
-def load(config_path: Path, profile_id: str | None) -> Setup:
-    cfg = tomllib.loads(config_path.read_text())
-    profile_id = profile_id or cfg.get("default_profile") or "java-developer"
-    path = PROFILES_DIR / f"{profile_id}.toml"
-    if not path.exists():
-        known = ", ".join(sorted(p.stem for p in PROFILES_DIR.glob("*.toml"))) or "none"
-        sys.exit(f"No profile '{profile_id}' (known: {known}). Create one with `harvest init`.")
-    profile = Profile.load(path)
+def load_config(path: Path) -> dict:
+    return tomllib.loads(path.read_text())
 
+
+def make_setup(cfg: dict, profile_id: str, profile: Profile) -> Setup:
     rules = cfg.get("rules", {})
     drops = dict(rules.get("drop_patterns", {}))
     if profile.exclude_keywords:
@@ -70,6 +67,19 @@ def load(config_path: Path, profile_id: str | None) -> Setup:
     ))
 
 
+def load(config_path: Path, profile_id: str | None) -> Setup:
+    cfg = load_config(config_path)
+    last = PROFILES_DIR / ".last"
+    profile_id = profile_id or cfg.get("default_profile") or (last.read_text().strip() if last.exists() else "")
+    if not profile_id:
+        sys.exit("No profile chosen. Run `harvest` to open the setup screen, or pass -p NAME.")
+    path = PROFILES_DIR / f"{profile_id}.toml"
+    if not path.exists():
+        known = ", ".join(sorted(p.stem for p in PROFILES_DIR.glob("*.toml"))) or "none"
+        sys.exit(f"No profile '{profile_id}' (known: {known}). Create one with `harvest init` or `harvest`.")
+    return make_setup(cfg, profile_id, Profile.load(path))
+
+
 def leads_from(post: Post, setup: Setup) -> list[Lead]:
     emails = extract.find_emails(post.text)
     if not emails:
@@ -83,7 +93,8 @@ def leads_from(post: Post, setup: Setup) -> list[Lead]:
     ]
 
 
-def report(leads: list[tuple[Lead, bool]], out: Path) -> None:
+def save_outputs(leads: list[tuple[Lead, bool]], out: Path) -> list[str]:
+    """Append to leads.csv and new_emails.txt; return the new, kept addresses."""
     out.mkdir(parents=True, exist_ok=True)
     with open(out / "leads.csv", "a", newline="") as f:
         w = csv.writer(f)
@@ -92,10 +103,14 @@ def report(leads: list[tuple[Lead, bool]], out: Path) -> None:
         for lead, new in leads:
             w.writerow([lead.email, new, lead.status, lead.source, lead.author, lead.url, lead.snippet])
 
-    new_kept = [l.email for l, new in leads if new and l.kept]
+    new_kept = list(dict.fromkeys(l.email for l, new in leads if new and l.kept))
     with open(out / "new_emails.txt", "a") as f:
         f.writelines(e + "\n" for e in new_kept)
+    return new_kept
 
+
+def report(leads: list[tuple[Lead, bool]], out: Path) -> None:
+    new_kept = save_outputs(leads, out)
     print(f"\n{'EMAIL':38} {'STATUS':34} {'SOURCE':9} AUTHOR")
     for lead, new in leads:
         tag = ("NEW" if new else "seen before") if lead.kept else lead.status
@@ -104,57 +119,76 @@ def report(leads: list[tuple[Lead, bool]], out: Path) -> None:
     print(f"\n{len(leads)} found · {kept} kept · {len(new_kept)} new → {out / 'new_emails.txt'}")
 
 
-async def run(args, setup: Setup, store: Store) -> list[tuple[Lead, bool]]:
+def describe(p: Profile) -> str:
+    return (f"{p.name} · {p.role}"
+            + (f" · {p.experience_years:g} yrs" if p.experience_years is not None else "")
+            + (f" · {', '.join(p.locations)}" if p.locations else " · any city"))
+
+
+async def harvest(page, setup: Setup, store: Store, sources: set[str], limit: int,
+                  log=print) -> list[tuple[Lead, bool]]:
+    """Search every chosen source with the profile's queries. `log` receives progress lines."""
     found: list[tuple[Lead, bool]] = []
-    limit = args.limit or setup.search.get("limit", 25)
-
-    def take(post: Post):
-        for lead in leads_from(post, setup):
-            found.append((lead, store.record(lead)))
-            print(f"  + {lead.email}  ({lead.status})")
-
     p = setup.profile
-    print(f"Profile: {p.name} · {p.role}"
-          + (f" · {p.experience_years:g} yrs" if p.experience_years is not None else "")
-          + (f" · {', '.join(p.locations)}" if p.locations else " · any city"))
+    plan = [
+        ("naukri", naukri, p.naukri_search(), {"days": setup.search.get("naukri_days", 1)}),
+        ("linkedin", linkedin, p.linkedin_search(), {}),
+    ]
+    for name, source, queries, extra in plan:
+        if name not in sources:
+            continue
+        for q in queries:
+            await _maybe_await(log(f"[{name}] {q}"))
+            try:
+                async for post in source.posts(page, q, limit, **extra):
+                    for lead in leads_from(post, setup):
+                        found.append((lead, store.record(lead)))
+                        await _maybe_await(log(f"  + {lead.email}  ({lead.status})"))
+            except Blocked as e:
+                # One refusal means the rest of this portal's queries will fail too.
+                await _maybe_await(log(f"  ! {e}"))
+                break
+    return found
+
+
+async def _maybe_await(x):
+    if asyncio.iscoroutine(x):
+        await x
+
+
+async def run(args, setup: Setup, store: Store) -> list[tuple[Lead, bool]]:
+    print("Profile:", describe(setup.profile))
     async with browser(headless=args.headless) as ctx:
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-        plan = [
-            ("naukri", naukri, p.naukri_search(), {"days": setup.search.get("naukri_days", 1)}),
-            ("linkedin", linkedin, p.linkedin_search(), {}),
-        ]
-        for name, source, queries, extra in plan:
-            if name not in args.sources:
-                continue
-            for q in queries:
-                print(f"[{name}] {q}")
-                try:
-                    async for post in source.posts(page, q, limit, **extra):
-                        take(post)
-                except Blocked as e:
-                    # One refusal means the rest of this portal's queries will fail too.
-                    print(f"  ! {e}", file=sys.stderr)
-                    break
-    return found
+        return await harvest(page, setup, store, args.sources,
+                             args.limit or setup.search.get("limit", 25))
+
+
+async def sign_in(page, minutes: int = 10) -> bool:
+    """Open LinkedIn's login page and wait until the person has signed in by hand.
+
+    Waiting for the window to be closed let people close it one step too early,
+    before the session cookie existed. Poll the URL instead: LinkedIn moves to the
+    feed with client-side navigation, which a load-event wait does not see.
+    """
+    await page.goto("https://www.linkedin.com/login")
+    for _ in range(minutes * 60):
+        await asyncio.sleep(1)
+        if page.is_closed():
+            return False
+        if "linkedin.com" in page.url and not re.search(r"/(login|checkpoint|authwall|uas)", page.url):
+            await asyncio.sleep(3)  # let the session cookie reach disk
+            return True
+    return False
 
 
 async def login() -> None:
     async with browser(headless=False) as ctx:
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-        await page.goto("https://www.linkedin.com/login")
         print("Sign in inside the browser window. It closes by itself once you are in.")
-        # Waiting for the window to be closed let people close it one step too early,
-        # before the session cookie existed. Poll the URL instead: LinkedIn moves to the
-        # feed with client-side navigation, which a load-event wait does not see.
-        for _ in range(600):
-            await asyncio.sleep(1)
-            if page.is_closed():
-                break
-            if "linkedin.com" in page.url and not re.search(r"/(login|checkpoint|authwall|uas)", page.url):
-                await asyncio.sleep(3)  # let the session cookie reach disk
-                print("Signed in. Session saved for later runs.")
-                return
-        sys.exit("Not signed in: the window was closed, or 10 minutes passed. Run `harvest login` again.")
+        if not await sign_in(page):
+            sys.exit("Not signed in: the window was closed, or 10 minutes passed. Run `harvest login` again.")
+        print("Signed in. Session saved for later runs.")
 
 
 def ask(prompt: str, default: str = "") -> str:
@@ -179,7 +213,7 @@ def init() -> None:
     profile = Profile(name=name, role=role, experience_years=float(exp) if exp else None,
                       locations=locations, skills=skills, exclude_keywords=exclude)
     PROFILES_DIR.mkdir(exist_ok=True)
-    path = PROFILES_DIR / f"{slug(role)}.toml"
+    path = PROFILES_DIR / f"{slug(name)}.toml"
     if path.exists() and ask(f"{path.name} exists. Overwrite? (y/n)", "n").lower() != "y":
         sys.exit("Nothing written.")
     path.write_text(to_toml(profile))
@@ -191,14 +225,15 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="harvest", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", type=Path, default=ROOT / "config.toml")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd")
 
+    sub.add_parser("ui", help="open the setup screen (the default when no command is given)")
     sub.add_parser("init", help="create a search profile interactively")
     sub.add_parser("profiles", help="list search profiles")
     sub.add_parser("login", help="sign in to LinkedIn once, by hand")
 
     r = sub.add_parser("run", help="search the portals")
-    r.add_argument("-p", "--profile", help="profile name from profiles/ (default: config's default_profile)")
+    r.add_argument("-p", "--profile", help="profile name from profiles/ (default: the last one used)")
     r.add_argument("--sources", default="naukri,linkedin", help="comma list: naukri,linkedin")
     r.add_argument("--limit", type=int, help="posts per query (overrides config)")
     r.add_argument("--headless", action="store_true", help="hide the browser window (Naukri refuses headless)")
@@ -213,6 +248,9 @@ def main(argv: list[str] | None = None) -> None:
 
     args = ap.parse_args(argv)
 
+    if args.cmd in (None, "ui"):
+        from .ui import run_screen
+        return asyncio.run(run_screen(args.config))
     if args.cmd == "init":
         return init()
     if args.cmd == "login":

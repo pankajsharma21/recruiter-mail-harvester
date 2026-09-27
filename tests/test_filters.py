@@ -1,10 +1,11 @@
 from pathlib import Path
 
-from harvester.cli import leads_from, load
+from conftest import example
+from harvester.cli import leads_from
 from harvester.sources import Post
 
 ROOT = Path(__file__).parent.parent
-JAVA = load(ROOT / "config.toml", "java-developer")
+JAVA = example("java-developer")
 
 
 def reason(text, setup=JAVA):

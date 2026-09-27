@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from harvester.cli import load
+from conftest import example
 from harvester.profile import Profile, experience_ranges, to_toml
 
 ROOT = Path(__file__).parent.parent
-QA = load(ROOT / "config.toml", "qa-engineer")
-PM = load(ROOT / "config.toml", "product-manager")
+QA = example("qa-engineer")
+PM = example("product-manager")
 
 
 def reason(text, setup):
@@ -55,7 +55,27 @@ def test_generated_queries():
 
 def test_toml_round_trip(tmp_path):
     p = Profile(name="A", role="Product Manager", experience_years=7, locations=["Noida"],
-                skills=["product manager"], exclude_keywords=["project manager"])
+                skills=["product manager"], exclude_keywords=["project manager"], sources=["naukri"])
     f = tmp_path / "pm.toml"
     f.write_text(to_toml(p))
     assert Profile.load(f) == p
+
+
+def test_keywords_from_role_for_any_job():
+    assert Profile(name="x", role="Sales Executive").role_keywords() == ["sales executive", "sales"]
+    assert Profile(name="x", role="Accountant").role_keywords() == ["accountant"]
+    assert Profile(name="x", role="Senior HR Manager").role_keywords() == ["senior hr manager", "hr"]
+
+
+def test_non_it_examples():
+    acc = example("accountant")
+    assert reason("Hiring Accountant, Tally + GST, 1-3 yrs, Noida. Mail hr@firm.in", acc) is None
+    assert reason("Hiring Accountant, 8-10 yrs, Noida", acc) == "experience 8-10 yrs"
+    sales = example("sales-executive")
+    assert reason("Sales Executive, fresher to 2 yrs, Mumbai, fixed salary", sales) is None
+    assert reason("Sales executive, commission only, Mumbai", sales).startswith("excluded keyword")
+
+
+def test_every_example_profile_loads():
+    for path in (ROOT / "examples" / "profiles").glob("*.toml"):
+        assert Profile.load(path).role

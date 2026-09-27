@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recruiter Mail Harvester</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5b6573;
+    --line: #dde1e6; --accent: #1f6feb; --accent-text: #ffffff;
+    --good: #1a7f37; --bad: #b42318; --soft: #eef3fd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --card: #171b21; --text: #e6e9ed; --muted: #9aa4b1;
+      --line: #2a3038; --accent: #4c8dff; --accent-text: #0b0d10;
+      --good: #4ac26b; --bad: #ff7b72; --soft: #1b2433;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 20px 28px 8px; }
+  h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 20px; padding: 16px 28px 28px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  h2 { margin: 0 0 12px; font-size: 16px; }
+  .person { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px;
+            border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
+  .person:hover { border-color: var(--accent); }
+  .person.selected { border-color: var(--accent); background: var(--soft); }
+  .person input { margin-top: 4px; accent-color: var(--accent); }
+  .person b { display: block; }
+  .person small { color: var(--muted); }
+  button { white-space: nowrap; font: inherit; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .55; cursor: default; }
+  .new { width: 100%; margin-top: 4px; }
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  label { display: block; font-weight: 600; font-size: 14px; }
+  label span { display: block; font-weight: 400; color: var(--muted); font-size: 13px; }
+  input[type=text], input[type=number] { width: 100%; margin-top: 5px; padding: 9px 11px; font: inherit;
+           color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .full { grid-column: 1 / -1; }
+  .checks { display: flex; gap: 20px; margin-top: 6px; font-weight: 400; }
+  .checks input { accent-color: var(--accent); }
+  .actions { display: flex; gap: 12px; align-items: center; margin-top: 18px; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .err { color: var(--bad); }
+  #progress { display: none; margin-top: 18px; }
+  #log { height: 190px; overflow: auto; background: var(--bg); border: 1px solid var(--line);
+         border-radius: 8px; padding: 10px; font: 12.5px/1.45 ui-monospace, Menlo, Consolas, monospace;
+         white-space: pre-wrap; }
+  #result { display: none; margin-top: 18px; }
+  .big { font-size: 28px; font-weight: 700; color: var(--good); }
+  textarea { width: 100%; height: 130px; margin-top: 8px; padding: 10px; font: 13px ui-monospace, Menlo, Consolas, monospace;
+             color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td.ok { color: var(--good); font-weight: 600; }
+  td.no { color: var(--muted); }
+  details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Recruiter Mail Harvester</h1>
+  <p>Pick a person (or add a new one), check the details, and press <b>Save &amp; find emails</b>. Details are saved for next time.</p>
+</header>
+<main>
+  <section class="panel">
+    <h2>Who is searching?</h2>
+    <div id="people"></div>
+    <button class="new" id="newBtn" type="button">+ New person</button>
+  </section>
+
+  <section class="panel">
+    <h2 id="formTitle">New person</h2>
+    <form id="form" autocomplete="off">
+      <label>Name
+        <input type="text" name="name" placeholder="e.g. Priya" required>
+      </label>
+      <label>Job you are looking for
+        <input type="text" name="role" placeholder="e.g. Accountant, Sales Executive, Java Developer" required>
+      </label>
+      <label>Years of experience
+        <span>Leave empty to see every level.</span>
+        <input type="number" name="experience_years" min="0" max="50" step="0.5" placeholder="e.g. 3">
+      </label>
+      <label>Cities
+        <span>Comma separated. Empty = anywhere in India.</span>
+        <input type="text" name="locations" placeholder="e.g. Delhi, Noida, Gurugram">
+      </label>
+      <label class="full">Words the job post must mention <i>(optional)</i>
+        <span>Comma separated. Empty = taken from the job title.</span>
+        <input type="text" name="skills" placeholder="e.g. tally, gst, accounts">
+      </label>
+      <label class="full">Skip posts that mention <i>(optional)</i>
+        <span>Comma separated.</span>
+        <input type="text" name="exclude_keywords" placeholder="e.g. night shift, commission only">
+      </label>
+      <div class="full">
+        <label>Search on</label>
+        <div class="checks">
+          <label><input type="checkbox" name="src_linkedin" checked> LinkedIn posts</label>
+          <label><input type="checkbox" name="src_naukri" checked> Naukri jobs</label>
+        </div>
+      </div>
+    </form>
+    <div class="actions">
+      <button class="primary" id="runBtn" type="button">Save &amp; find emails</button>
+      <button id="loginBtn" type="button">Sign in to LinkedIn</button>
+      <span class="hint" id="msg"></span>
+    </div>
+
+    <div id="progress">
+      <h2 id="progressTitle">Searching…</h2>
+      <p class="hint">A browser tab is doing the searching. Leave it alone; this page updates by itself.</p>
+      <div id="log"></div>
+    </div>
+
+    <div id="result">
+      <h2>Done</h2>
+      <div><span class="big" id="newCount">0</span> new email addresses</div>
+      <p class="hint" id="summary"></p>
+      <textarea id="emails" readonly></textarea>
+      <div class="actions">
+        <button class="primary" id="copyBtn" type="button">Copy all</button>
+        <span class="hint" id="savedTo"></span>
+      </div>
+      <details>
+        <summary>Everything found, and why some were skipped</summary>
+        <table><thead><tr><th>Email</th><th>Result</th><th>Posted by</th><th>Where</th></tr></thead>
+        <tbody id="rows"></tbody></table>
+      </details>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const form = $("#form");
+let people = window.__PEOPLE__ || [];
+let selected = window.__LAST__ || null;
+let busy = false;
+
+const split = (s) => s.split(",").map(x => x.trim()).filter(Boolean);
+const join = (a) => (a || []).join(", ");
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function describe(p) {
+  const bits = [p.role];
+  if (p.experience_years != null) bits.push(p.experience_years + " yrs");
+  bits.push(p.locations && p.locations.length ? p.locations.join(", ") : "any city");
+  return bits.join(" · ");
+}
+
+function renderPeople() {
+  $("#people").innerHTML = people.length ? "" : '<p class="hint">Nobody saved yet. Fill the form to add the first person.</p>';
+  for (const p of people) {
+    const el = document.createElement("label");
+    el.className = "person" + (p.id === selected ? " selected" : "");
+    el.innerHTML = `<input type="radio" name="who" ${p.id === selected ? "checked" : ""}>
+                    <div><b>${esc(p.name)}</b><small>${esc(describe(p))}</small></div>`;
+    el.onclick = () => { if (!busy) { selected = p.id; fill(p); renderPeople(); } };
+    $("#people").appendChild(el);
+  }
+}
+
+function fill(p) {
+  $("#formTitle").textContent = p ? `Details for ${p.name}` : "New person";
+  form.name.value = p ? p.name : "";
+  form.role.value = p ? p.role : "";
+  form.experience_years.value = p && p.experience_years != null ? p.experience_years : "";
+  form.locations.value = p ? join(p.locations) : "";
+  form.skills.value = p ? join(p.skills) : "";
+  form.exclude_keywords.value = p ? join(p.exclude_keywords) : "";
+  const src = p ? p.sources : ["linkedin", "naukri"];
+  form.src_linkedin.checked = src.includes("linkedin");
+  form.src_naukri.checked = src.includes("naukri");
+  $("#msg").textContent = "";
+}
+
+$("#newBtn").onclick = () => { if (!busy) { selected = null; fill(null); renderPeople(); form.name.focus(); } };
+
+function setBusy(on) {
+  busy = on;
+  for (const b of ["#runBtn", "#loginBtn", "#newBtn"]) $(b).disabled = on;
+  for (const i of form.querySelectorAll("input")) i.disabled = on;
+}
+
+$("#runBtn").onclick = async () => {
+  const sources = [form.src_linkedin.checked && "linkedin", form.src_naukri.checked && "naukri"].filter(Boolean);
+  if (!form.name.value.trim() || !form.role.value.trim()) {
+    $("#msg").innerHTML = '<span class="err">Please fill in Name and Job.</span>'; return;
+  }
+  if (!sources.length) { $("#msg").innerHTML = '<span class="err">Pick LinkedIn, Naukri or both.</span>'; return; }
+  const exp = form.experience_years.value.trim();
+  const data = {
+    id: selected, name: form.name.value.trim(), role: form.role.value.trim(),
+    experience_years: exp === "" ? null : Number(exp),
+    locations: split(form.locations.value), skills: split(form.skills.value),
+    exclude_keywords: split(form.exclude_keywords.value), sources,
+  };
+  $("#msg").textContent = "";
+  setBusy(true);
+  $("#result").style.display = "none";
+  $("#progress").style.display = "block";
+  $("#progressTitle").textContent = "Searching…";
+  $("#log").textContent = "";
+  const saved = await window.harvestRun(data);
+  people = saved.people; selected = saved.id; renderPeople();
+  $("#formTitle").textContent = `Details for ${data.name}`;
+};
+
+$("#loginBtn").onclick = async () => {
+  setBusy(true);
+  $("#msg").textContent = "A LinkedIn tab has opened. Sign in there; it closes by itself.";
+  const ok = await window.harvestLogin();
+  $("#msg").innerHTML = ok ? "Signed in to LinkedIn." : '<span class="err">Not signed in. Try again.</span>';
+  setBusy(false);
+};
+
+$("#copyBtn").onclick = () => {
+  const t = $("#emails"); t.select(); document.execCommand("copy");
+  $("#copyBtn").textContent = "Copied"; setTimeout(() => $("#copyBtn").textContent = "Copy all", 1500);
+};
+
+// Called from Python.
+window.ui = {
+  log(line) { const l = $("#log"); l.textContent += line + "\n"; l.scrollTop = l.scrollHeight; },
+  done(r) {
+    $("#progressTitle").textContent = "Finished";
+    $("#newCount").textContent = r.new_emails.length;
+    $("#summary").textContent = `${r.found} found · ${r.kept} matched your details · ${r.new_emails.length} never seen before.`
+      + (r.blocked.length ? " Note: " + r.blocked.join(" ") : "");
+    $("#emails").value = r.new_emails.join("\n");
+    $("#savedTo").textContent = "Also saved to " + r.saved_to;
+    $("#rows").innerHTML = r.rows.map(x =>
+      `<tr><td>${esc(x.email)}</td><td class="${x.kept ? "ok" : "no"}">${esc(x.tag)}</td>
+       <td>${esc(x.author)}</td><td>${esc(x.source)}</td></tr>`).join("");
+    $("#result").style.display = "block";
+    setBusy(false);
+  },
+};
+
+const first = people.find(p => p.id === selected);
+fill(first || null);
+if (!first) selected = null;
+renderPeople();
+</script>
+</body>
+</html>

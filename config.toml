@@ -1,7 +1,5 @@
-# Settings shared by every profile. Who is searching (role, experience, cities,
-# skills) lives in profiles/<name>.toml - create one with `harvest init`.
-
-default_profile = "java-developer"
+# Settings shared by every person. Who is searching (job, experience, cities) is
+# entered on the setup screen (`harvest`) and saved to profiles/<name>.toml.
 
 [search]
 # Posts/JDs to read per query.
@@ -25,5 +23,5 @@ soft_drops = ["job seeker"]
 
 [rules.lists]
 # Addresses and domains that are never worth mailing (list sellers, spam communities).
-blocked_emails  = ["connectifyproconsult@gmail.com"]
+blocked_emails  = []
 blocked_domains = ["example.com"]

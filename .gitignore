@@ -5,3 +5,5 @@ __pycache__/
 # Harvested addresses are personal data: never commit them.
 data/
 output/
+# Each person's saved details and harvested addresses are their own data.
+/profiles/
