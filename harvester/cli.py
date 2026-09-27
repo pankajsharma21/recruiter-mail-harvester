@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from playwright.async_api import Error as PlaywrightError
+
 from . import extract
 from .browser import browser
 from .filters import Rules
@@ -149,6 +151,12 @@ async def harvest(page, setup: Setup, store: Store, sources: set[str], limit: in
                 # One refusal means the rest of this portal's queries will fail too.
                 await _maybe_await(log(f"  ! {e}"))
                 break
+            except PlaywrightError as e:
+                # A page that never loads (LinkedIn slows down after several searches)
+                # used to end the whole run, and the addresses already found were never
+                # written out even though the store had marked them as seen.
+                first = str(e).splitlines()[0][:120]
+                await _maybe_await(log(f"  ! {name} search did not load, skipped: {first}"))
     return found
 
 
