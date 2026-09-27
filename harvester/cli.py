@@ -1,45 +1,84 @@
 """harvest - collect recruiter email addresses from job portals.
 
-    harvest login              open the browser once and sign in to LinkedIn by hand
-    harvest run                search every source, print and save what is new
-    harvest scan FILE          extract from pasted text (no browser)
-    harvest export --days 1    addresses first seen in the last N days, one per line
+    harvest init                     create a search profile (role, experience, cities)
+    harvest profiles                 list profiles
+    harvest login                    open the browser once and sign in to LinkedIn by hand
+    harvest run [-p PROFILE]         search every source, print and save what is new
+    harvest scan FILE [-p PROFILE]   extract from pasted text (no browser)
+    harvest export --days 1          addresses first seen in the last N days, one per line
 """
 
 import argparse
 import asyncio
 import csv
+import re
 import sys
 import tomllib
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 from . import extract
 from .browser import browser
 from .filters import Rules
+from .profile import Profile, slug, to_toml
 from .sources import Blocked, Post, linkedin, naukri
 from .store import Lead, Store
 
 ROOT = Path.cwd()
-DB_PATH = ROOT / "data" / "leads.db"
-OUT_DIR = ROOT / "output"
+PROFILES_DIR = ROOT / "profiles"
 
 
-def load_config(path: Path) -> tuple[dict, Rules]:
-    cfg = tomllib.loads(path.read_text())
+@dataclass
+class Setup:
+    """Everything a run needs: shared settings plus one person's profile."""
+    profile_id: str
+    profile: Profile
+    search: dict
+    rules: Rules
+
+    @property
+    def data_dir(self) -> Path:
+        return ROOT / "data" / self.profile_id
+
+    @property
+    def out_dir(self) -> Path:
+        return ROOT / "output" / self.profile_id / date.today().isoformat()
+
+
+def load(config_path: Path, profile_id: str | None) -> Setup:
+    cfg = tomllib.loads(config_path.read_text())
+    profile_id = profile_id or cfg.get("default_profile") or "java-developer"
+    path = PROFILES_DIR / f"{profile_id}.toml"
+    if not path.exists():
+        known = ", ".join(sorted(p.stem for p in PROFILES_DIR.glob("*.toml"))) or "none"
+        sys.exit(f"No profile '{profile_id}' (known: {known}). Create one with `harvest init`.")
+    profile = Profile.load(path)
+
     rules = cfg.get("rules", {})
-    return cfg.get("search", {}), Rules.from_dict({**rules, **rules.get("lists", {})})
+    drops = dict(rules.get("drop_patterns", {}))
+    if profile.exclude_keywords:
+        drops["excluded keyword"] = r"\b(?:" + "|".join(map(re.escape, profile.exclude_keywords)) + r")\b"
+    lists = rules.get("lists", {})
+    return Setup(profile_id, profile, cfg.get("search", {}), Rules(
+        role_keywords=profile.role_keywords(),
+        drop_patterns=drops,
+        blocked_emails=lists.get("blocked_emails", []),
+        blocked_domains=lists.get("blocked_domains", []),
+        hiring_phrase=rules.get("hiring_phrase", ""),
+        soft_drops=rules.get("soft_drops", []),
+    ))
 
 
-def leads_from(post: Post, rules: Rules) -> list[Lead]:
+def leads_from(post: Post, setup: Setup) -> list[Lead]:
     emails = extract.find_emails(post.text)
     if not emails:
         return []
-    post_reason = rules.check_post(post.text)
+    post_reason = setup.rules.check_post(post.text) or setup.profile.check_post(post.text)
     return [
         Lead(email=e, source=post.source, url=post.url, author=post.author,
              snippet=extract.snippet(post.text, e),
-             status=post_reason or rules.check_email(e) or "kept")
+             status=post_reason or setup.rules.check_email(e) or "kept")
         for e in emails
     ]
 
@@ -57,28 +96,32 @@ def report(leads: list[tuple[Lead, bool]], out: Path) -> None:
     with open(out / "new_emails.txt", "a") as f:
         f.writelines(e + "\n" for e in new_kept)
 
-    print(f"\n{'EMAIL':38} {'STATUS':18} {'SOURCE':9} AUTHOR")
+    print(f"\n{'EMAIL':38} {'STATUS':34} {'SOURCE':9} AUTHOR")
     for lead, new in leads:
-        tag = lead.status if lead.kept is False else ("NEW" if new else "seen before")
-        print(f"{lead.email:38} {tag:18} {lead.source:9} {lead.author[:30]}")
+        tag = ("NEW" if new else "seen before") if lead.kept else lead.status
+        print(f"{lead.email:38} {tag[:34]:34} {lead.source:9} {lead.author[:30]}")
     kept = sum(l.kept for l, _ in leads)
     print(f"\n{len(leads)} found · {kept} kept · {len(new_kept)} new → {out / 'new_emails.txt'}")
 
 
-async def run(args, search: dict, rules: Rules, store: Store) -> list[tuple[Lead, bool]]:
+async def run(args, setup: Setup, store: Store) -> list[tuple[Lead, bool]]:
     found: list[tuple[Lead, bool]] = []
-    limit = args.limit or search.get("limit", 25)
+    limit = args.limit or setup.search.get("limit", 25)
 
     def take(post: Post):
-        for lead in leads_from(post, rules):
+        for lead in leads_from(post, setup):
             found.append((lead, store.record(lead)))
             print(f"  + {lead.email}  ({lead.status})")
 
+    p = setup.profile
+    print(f"Profile: {p.name} · {p.role}"
+          + (f" · {p.experience_years:g} yrs" if p.experience_years is not None else "")
+          + (f" · {', '.join(p.locations)}" if p.locations else " · any city"))
     async with browser(headless=args.headless) as ctx:
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         plan = [
-            ("naukri", naukri, search.get("naukri_queries", []), {"days": search.get("naukri_days", 1)}),
-            ("linkedin", linkedin, search.get("linkedin_queries", []), {}),
+            ("naukri", naukri, p.naukri_search(), {"days": setup.search.get("naukri_days", 1)}),
+            ("linkedin", linkedin, p.linkedin_search(), {}),
         ]
         for name, source, queries, extra in plan:
             if name not in args.sources:
@@ -99,8 +142,49 @@ async def login() -> None:
     async with browser(headless=False) as ctx:
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await page.goto("https://www.linkedin.com/login")
-        print("Sign in inside the browser window, then close it. The session is kept for later runs.")
-        await page.wait_for_event("close", timeout=0)
+        print("Sign in inside the browser window. It closes by itself once you are in.")
+        # Waiting for the window to be closed let people close it one step too early,
+        # before the session cookie existed. Poll the URL instead: LinkedIn moves to the
+        # feed with client-side navigation, which a load-event wait does not see.
+        for _ in range(600):
+            await asyncio.sleep(1)
+            if page.is_closed():
+                break
+            if "linkedin.com" in page.url and not re.search(r"/(login|checkpoint|authwall|uas)", page.url):
+                await asyncio.sleep(3)  # let the session cookie reach disk
+                print("Signed in. Session saved for later runs.")
+                return
+        sys.exit("Not signed in: the window was closed, or 10 minutes passed. Run `harvest login` again.")
+
+
+def ask(prompt: str, default: str = "") -> str:
+    shown = f" [{default}]" if default else ""
+    return input(f"{prompt}{shown}: ").strip() or default
+
+
+def split(s: str) -> list[str]:
+    return [x.strip() for x in s.split(",") if x.strip()]
+
+
+def init() -> None:
+    """Interactive profile wizard, so nobody has to learn TOML to use the tool."""
+    print("New search profile. Press Enter to accept a [default].\n")
+    name = ask("Your name", "Me")
+    role = ask("Role you are looking for (e.g. QA Engineer, Product Manager)", "Java Developer")
+    exp = ask("Years of experience (blank = don't filter)", "")
+    locations = split(ask("Cities you would work in, comma separated (blank = anywhere)", ""))
+    skills = split(ask("Keywords a post must mention, comma separated", role.lower()))
+    exclude = split(ask("Keywords that mean 'not for me', comma separated", ""))
+
+    profile = Profile(name=name, role=role, experience_years=float(exp) if exp else None,
+                      locations=locations, skills=skills, exclude_keywords=exclude)
+    PROFILES_DIR.mkdir(exist_ok=True)
+    path = PROFILES_DIR / f"{slug(role)}.toml"
+    if path.exists() and ask(f"{path.name} exists. Overwrite? (y/n)", "n").lower() != "y":
+        sys.exit("Nothing written.")
+    path.write_text(to_toml(profile))
+    print(f"\nSaved {path}\nLinkedIn queries: {profile.linkedin_search()}\nNaukri queries:   {profile.naukri_search()}")
+    print(f"Run it with:  harvest run -p {path.stem}")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -109,33 +193,46 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--config", type=Path, default=ROOT / "config.toml")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    sub.add_parser("init", help="create a search profile interactively")
+    sub.add_parser("profiles", help="list search profiles")
     sub.add_parser("login", help="sign in to LinkedIn once, by hand")
 
     r = sub.add_parser("run", help="search the portals")
+    r.add_argument("-p", "--profile", help="profile name from profiles/ (default: config's default_profile)")
     r.add_argument("--sources", default="naukri,linkedin", help="comma list: naukri,linkedin")
     r.add_argument("--limit", type=int, help="posts per query (overrides config)")
     r.add_argument("--headless", action="store_true", help="hide the browser window (Naukri refuses headless)")
 
     s = sub.add_parser("scan", help="extract from a text file ('-' for stdin)")
     s.add_argument("file")
+    s.add_argument("-p", "--profile")
 
     e = sub.add_parser("export", help="print addresses first seen recently")
     e.add_argument("--days", type=float, default=1)
+    e.add_argument("-p", "--profile")
 
     args = ap.parse_args(argv)
-    search, rules = load_config(args.config)
-    store = Store(DB_PATH)
-    out = OUT_DIR / date.today().isoformat()
 
+    if args.cmd == "init":
+        return init()
     if args.cmd == "login":
-        asyncio.run(login())
-    elif args.cmd == "run":
+        return asyncio.run(login())
+    if args.cmd == "profiles":
+        for path in sorted(PROFILES_DIR.glob("*.toml")):
+            p = Profile.load(path)
+            exp = f"{p.experience_years:g} yrs" if p.experience_years is not None else "any exp"
+            print(f"{path.stem:22} {p.role:22} {exp:9} {', '.join(p.locations) or 'any city'}")
+        return
+
+    setup = load(args.config, args.profile)
+    store = Store(setup.data_dir / "leads.db")
+    if args.cmd == "run":
         args.sources = {s.strip() for s in args.sources.split(",")}
-        report(asyncio.run(run(args, search, rules, store)), out)
+        report(asyncio.run(run(args, setup, store)), setup.out_dir)
     elif args.cmd == "scan":
         text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text()
-        leads = leads_from(Post(source="paste", url="", author="", text=text), rules)
-        report([(l, store.record(l)) for l in leads], out)
+        leads = leads_from(Post(source="paste", url="", author="", text=text), setup)
+        report([(l, store.record(l)) for l in leads], setup.out_dir)
     elif args.cmd == "export":
         print("\n".join(store.kept_since(args.days)))
 

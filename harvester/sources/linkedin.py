@@ -53,12 +53,16 @@ async def posts(page: Page, query: str, limit: int, scroll_rounds: int = 8) -> A
         // Only outermost list items: comments and reshares nest their own.
         const all = [...document.querySelectorAll(sel)];
         return all.filter(el => !el.parentElement.closest(sel)).map(el => {
+            // Search results carry no post permalink in the DOM, so a post falls back
+            // to the search URL. The avatar link comes first and has no text, so the
+            // author is the first profile/company link that does.
             const link = el.querySelector('a[href*="/feed/update/"], a[href*="/posts/"]');
-            const actor = el.querySelector('a[href*="/in/"], a[href*="/company/"]');
+            const actor = [...el.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')]
+                .map(a => a.innerText.trim().split('\\n')[0]).find(t => t);
             return {
                 text: el.innerText,
                 url: link ? link.href.split('?')[0] : location.href,
-                author: actor ? actor.innerText.split('\\n')[0].trim() : '',
+                author: actor || '',
             };
         });
     }""", POST)

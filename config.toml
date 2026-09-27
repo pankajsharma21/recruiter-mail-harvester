@@ -1,33 +1,29 @@
-# What to search for, and what to throw away. Edit freely; no code change needed.
+# Settings shared by every profile. Who is searching (role, experience, cities,
+# skills) lives in profiles/<name>.toml - create one with `harvest init`.
+
+default_profile = "java-developer"
 
 [search]
-linkedin_queries = [
-  "hiring java developer share resume",
-  "spring boot microservices hiring share resume",
-  "java developer immediate joiner hiring email",
-]
-naukri_queries = [
-  "java developer",
-  "spring boot microservices",
-]
 # Posts/JDs to read per query.
 limit = 25
 # Naukri "posted in the last N days". LinkedIn is always the last 24 hours.
 naukri_days = 1
 
 [rules]
-# A post must mention at least one of these.
-role_keywords = ["java", "spring", "microservice", "backend", "j2ee", "hibernate"]
+# A post containing one of these phrases is a job post, even when it was reshared by
+# someone "Open to Work". The labels in soft_drops are ignored for such posts.
+hiring_phrase = '\b(?:share|send|mail|forward|drop)\s+(?:your|their|the)?\s*(?:updated\s+)?(?:resume|cv|profile)|interested candidates'
+soft_drops = ["job seeker"]
 
-# label = regex. The first matching label drops the post and is recorded as the reason.
+# label = regex. The first matching label drops the post; the label and the matched
+# words are recorded as the reason, so a misfiring rule is easy to spot.
 [rules.drop_patterns]
 "us staffing"      = '\b(OPT|H1-?B|EAD|C2C|W2|GC holders?|USC)\b|\bUSA\b|\bUS based\b'
-"outside india"    = '\b(Canada|Riyadh|Dubai|Saudi|Qatar|UAE)\b'
-"job seeker"       = '#?open\s?to\s?work|looking for (a )?(new )?(job|opportunit)'
+"outside india"    = '\b(Canada|Riyadh|Dubai|Saudi|Qatar|UAE|Pakistan|Karachi|Lahore|Islamabad)\b'
+"job seeker"       = '#?open\s?to\s?work|\bI(?:.m| am) (?:actively )?(?:looking|seeking)|seeking (?:a )?referral'
 "training/support" = 'job (support|assistance)|interview support|proxy interview|placement guarantee'
-"other stack"      = '\b(ServiceNow|SailPoint|Guidewire|Salesforce)\b'
 
 [rules.lists]
 # Addresses and domains that are never worth mailing (list sellers, spam communities).
-blocked_emails  = []
+blocked_emails  = ["connectifyproconsult@gmail.com"]
 blocked_domains = ["example.com"]

@@ -1,0 +1,10 @@
+# Example: a QA engineer with 3 years in Pune or Bengaluru.
+[profile]
+name = "QA example"
+role = "QA Engineer"
+experience_years = 3
+locations = ["Pune", "Bengaluru"]
+skills = ["qa", "testing", "tester", "selenium", "sdet", "automation test", "manual test"]
+exclude_keywords = []
+linkedin_queries = []
+naukri_queries = []

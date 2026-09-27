@@ -41,13 +41,23 @@ class Store:
         self.db.executescript(SCHEMA)
 
     def record(self, lead: Lead) -> bool:
-        """Save the lead. True if this address has never been seen before."""
+        """Save the lead. True if it is new: never seen, or only ever seen dropped.
+
+        The same recruiter often shows up in an off-target post first and a
+        matching one later; the later match must not be lost as "seen before".
+        """
         now = datetime.now().isoformat(timespec="seconds")
-        cur = self.db.execute(
-            "UPDATE leads SET last_seen=?, times_seen=times_seen+1 WHERE email=?", (now, lead.email))
-        if cur.rowcount:
+        row = self.db.execute("SELECT status FROM leads WHERE email=?", (lead.email,)).fetchone()
+        if row:
+            promote = lead.kept and row[0] != "kept"
+            if promote:
+                self.db.execute(
+                    "UPDATE leads SET status='kept', first_seen=?, source=?, url=?, author=?, snippet=? "
+                    "WHERE email=?", (now, lead.source, lead.url, lead.author, lead.snippet, lead.email))
+            self.db.execute(
+                "UPDATE leads SET last_seen=?, times_seen=times_seen+1 WHERE email=?", (now, lead.email))
             self.db.commit()
-            return False
+            return promote
         self.db.execute(
             "INSERT INTO leads VALUES (?,?,?,?,?,?,?,?,1)",
             (lead.email, now, now, lead.source, lead.url, lead.author, lead.snippet, lead.status))
