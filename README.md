@@ -4,7 +4,9 @@
 
 It works for any job: accountant, sales executive, teacher, HR, QA engineer, Java developer. It runs on your own computer, uses your own browser, and needs no paid service, API key or account with this project.
 
-![The setup screen after a search](docs/screen.png)
+![Demo: fill in details once, search, copy the new addresses, add a second person, and tick a saved name next time](docs/demo.gif)
+
+*The demo uses a simulated search with made-up `.example` addresses.*
 
 ---
 
@@ -49,6 +51,8 @@ A Chrome window opens with the setup screen.
 A second tab does the searching, which takes a few minutes, and the screen fills in as it goes. When it finishes you get the new addresses, a **Copy all** button, and a table of everything found with the reason each skipped one was skipped.
 
 The addresses are also saved to `output/<name>/<date>/new_emails.txt`.
+
+![The setup screen after a search](docs/screen.png)
 
 ### Form fields
 
@@ -131,6 +135,7 @@ harvester/
     ├── linkedin.py   # content search → scroll → expand "…more" → posts
     └── naukri.py     # job search → open each job → description
 examples/profiles/    # sample people, IT and non-IT
+scripts/              # record_demo.py + build_gif.py: regenerate docs/demo.gif
 tests/                # 26 tests, no network needed
 ```
 

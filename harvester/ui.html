@@ -167,9 +167,15 @@ function renderPeople() {
     el.className = "person" + (p.id === selected ? " selected" : "");
     el.innerHTML = `<input type="radio" name="who" ${p.id === selected ? "checked" : ""}>
                     <div><b>${esc(p.name)}</b><small>${esc(describe(p))}</small></div>`;
-    el.onclick = () => { if (!busy) { selected = p.id; fill(p); renderPeople(); } };
+    el.onclick = () => { if (!busy && p.id !== selected) { selected = p.id; fill(p); clearOutput(); renderPeople(); } };
     $("#people").appendChild(el);
   }
+}
+
+// A different person's details should not sit above the previous person's results.
+function clearOutput() {
+  $("#progress").style.display = "none";
+  $("#result").style.display = "none";
 }
 
 function fill(p) {
@@ -186,7 +192,7 @@ function fill(p) {
   $("#msg").textContent = "";
 }
 
-$("#newBtn").onclick = () => { if (!busy) { selected = null; fill(null); renderPeople(); form.name.focus(); } };
+$("#newBtn").onclick = () => { if (!busy) { selected = null; fill(null); clearOutput(); renderPeople(); form.name.focus(); } };
 
 function setBusy(on) {
   busy = on;
