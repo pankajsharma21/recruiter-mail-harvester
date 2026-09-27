@@ -106,7 +106,12 @@ async def run_screen(config_path: Path) -> None:
             asyncio.create_task(search(profile_id, profile))
             return {"id": profile_id, "people": _people(profiles_dir)}
 
+        async def harvest_status() -> bool:
+            return await cli.signed_in(ctx)
+
         async def harvest_login() -> bool:
+            if await cli.signed_in(ctx):
+                return True  # already signed in: don't flash a tab that closes by itself
             tab = await ctx.new_page()
             ok = await cli.sign_in(tab)
             if not tab.is_closed():
@@ -116,6 +121,7 @@ async def run_screen(config_path: Path) -> None:
 
         await page.expose_function("harvestRun", harvest_run)
         await page.expose_function("harvestLogin", harvest_login)
+        await page.expose_function("harvestStatus", harvest_status)
 
         last = last_file.read_text().strip() if last_file.exists() else None
         boot = (f"<script>window.__PEOPLE__={json.dumps(_people(profiles_dir))};"

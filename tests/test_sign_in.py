@@ -56,3 +56,11 @@ def test_session_cookie_means_signed_in():
         ("https://www.linkedin.com/feed/", [{"name": "li_at", "value": "abc"}]),
     ])
     assert run_sign_in(page) is True
+
+
+def test_already_signed_in_opens_nothing():
+    # A session saved on an earlier run: no login page, no tab flashing open and shut.
+    page = FakePage([])
+    page.cookie_jar = [{"name": "li_at", "value": "abc"}]
+    assert run_sign_in(page) is True
+    assert page.url == "about:blank"

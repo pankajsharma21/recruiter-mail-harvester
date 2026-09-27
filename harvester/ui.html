@@ -64,6 +64,7 @@
   th { color: var(--muted); font-weight: 600; }
   td.ok { color: var(--good); font-weight: 600; }
   td.no { color: var(--muted); }
+  #loginBtn.signedIn { color: var(--good); border-color: var(--good); }
   details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
 </style>
 </head>
@@ -241,11 +242,25 @@ $("#runBtn").onclick = async () => {
   $("#formTitle").textContent = `Details for ${data.name}`;
 };
 
+// The LinkedIn session is saved in the tool's own Chrome profile, so after the first
+// sign-in it survives restarts. Say so, or people keep pressing "Sign in" again.
+function showLogin(ok) {
+  const b = $("#loginBtn");
+  b.textContent = ok ? "✓ Signed in to LinkedIn" : "Sign in to LinkedIn";
+  b.classList.toggle("signedIn", ok);
+}
+window.harvestStatus().then(showLogin);
+
 $("#loginBtn").onclick = async () => {
+  if ($("#loginBtn").classList.contains("signedIn")) {
+    $("#msg").textContent = "Already signed in. Your LinkedIn login is saved; just press Save & find emails.";
+    return;
+  }
   setBusy(true);
   $("#msg").textContent = "A LinkedIn tab has opened. Sign in there; it closes by itself.";
   const ok = await window.harvestLogin();
-  $("#msg").innerHTML = ok ? "Signed in to LinkedIn." : '<span class="err">Not signed in. Try again.</span>';
+  showLogin(ok);
+  $("#msg").innerHTML = ok ? "Signed in to LinkedIn. It stays saved for next time." : '<span class="err">Not signed in. Try again.</span>';
   setBusy(false);
 };
 

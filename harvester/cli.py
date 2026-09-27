@@ -165,6 +165,12 @@ async def run(args, setup: Setup, store: Store) -> list[tuple[Lead, bool]]:
                              args.limit or setup.profile.posts_per_search)
 
 
+async def signed_in(ctx) -> bool:
+    """True when the tool's Chrome profile already holds a LinkedIn session."""
+    cookies = await ctx.cookies("https://www.linkedin.com")
+    return any(c["name"] == "li_at" and c["value"] for c in cookies)
+
+
 async def sign_in(page, minutes: int = 10) -> bool:
     """Open LinkedIn's login page and wait until the person has signed in by hand.
 
@@ -174,13 +180,14 @@ async def sign_in(page, minutes: int = 10) -> bool:
     that is not /login looked like success. Poll for the `li_at` session cookie,
     which LinkedIn sets only once someone is actually signed in.
     """
+    if await signed_in(page.context):
+        return True  # the session saved last time is still there; nothing to do
     await page.goto("https://www.linkedin.com/login")
     for _ in range(minutes * 60):
         await asyncio.sleep(1)
         if page.is_closed():
             return False
-        cookies = await page.context.cookies("https://www.linkedin.com")
-        if any(c["name"] == "li_at" and c["value"] for c in cookies):
+        if await signed_in(page.context):
             await asyncio.sleep(3)  # let the session cookie reach disk
             return True
     return False
