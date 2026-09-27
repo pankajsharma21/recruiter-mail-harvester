@@ -22,7 +22,7 @@ from pathlib import Path
 from . import extract
 from .browser import browser
 from .filters import Rules
-from .profile import Profile, slug, to_toml
+from .profile import POSTED_WITHIN, Profile, slug, to_toml
 from .sources import Blocked, Post, linkedin, naukri
 from .store import Lead, Store
 
@@ -122,7 +122,8 @@ def report(leads: list[tuple[Lead, bool]], out: Path) -> None:
 def describe(p: Profile) -> str:
     return (f"{p.name} · {p.role}"
             + (f" · {p.experience_years:g} yrs" if p.experience_years is not None else "")
-            + (f" · {', '.join(p.locations)}" if p.locations else " · any city"))
+            + (f" · {', '.join(p.locations)}" if p.locations else " · any city")
+            + f" · {POSTED_WITHIN[p.posted_within]['label']}")
 
 
 async def harvest(page, setup: Setup, store: Store, sources: set[str], limit: int,
@@ -131,8 +132,8 @@ async def harvest(page, setup: Setup, store: Store, sources: set[str], limit: in
     found: list[tuple[Lead, bool]] = []
     p = setup.profile
     plan = [
-        ("naukri", naukri, p.naukri_search(), {"days": setup.search.get("naukri_days", 1)}),
-        ("linkedin", linkedin, p.linkedin_search(), {}),
+        ("naukri", naukri, p.naukri_search(), {"days": POSTED_WITHIN[p.posted_within]["naukri_days"]}),
+        ("linkedin", linkedin, p.linkedin_search(), {"within": POSTED_WITHIN[p.posted_within]["linkedin"]}),
     ]
     for name, source, queries, extra in plan:
         if name not in sources:
@@ -161,7 +162,7 @@ async def run(args, setup: Setup, store: Store) -> list[tuple[Lead, bool]]:
     async with browser(headless=args.headless) as ctx:
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         return await harvest(page, setup, store, args.sources,
-                             args.limit or setup.search.get("limit", 25))
+                             args.limit or setup.profile.posts_per_search)
 
 
 async def sign_in(page, minutes: int = 10) -> bool:
@@ -235,7 +236,7 @@ def main(argv: list[str] | None = None) -> None:
     r = sub.add_parser("run", help="search the portals")
     r.add_argument("-p", "--profile", help="profile name from profiles/ (default: the last one used)")
     r.add_argument("--sources", default="naukri,linkedin", help="comma list: naukri,linkedin")
-    r.add_argument("--limit", type=int, help="posts per query (overrides config)")
+    r.add_argument("--limit", type=int, help="posts per search (overrides the saved value)")
     r.add_argument("--headless", action="store_true", help="hide the browser window (Naukri refuses headless)")
 
     s = sub.add_parser("scan", help="extract from a text file ('-' for stdin)")

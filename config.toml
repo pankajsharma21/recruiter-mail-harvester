@@ -1,12 +1,6 @@
 # Settings shared by every person. Who is searching (job, experience, cities) is
 # entered on the setup screen (`harvest`) and saved to profiles/<name>.toml.
 
-[search]
-# Posts/JDs to read per query.
-limit = 25
-# Naukri "posted in the last N days". LinkedIn is always the last 24 hours.
-naukri_days = 1
-
 [rules]
 # A post containing one of these phrases is a job post, even when it was reshared by
 # someone "Open to Work". The labels in soft_drops are ignored for such posts.

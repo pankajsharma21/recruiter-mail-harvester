@@ -34,6 +34,13 @@ _CITY_RX = {city: re.compile(r"\b(" + "|".join(map(re.escape, names)) + r")\b", 
             for city, names in CITIES.items()}
 _ANYWHERE = re.compile(r"\b(remote|work from home|wfh|pan india|anywhere in india)\b", re.I)
 
+# How far back to look, in each portal's own terms. Both portals offer these three.
+POSTED_WITHIN = {
+    "24h": {"label": "last 24 hours", "linkedin": "past-24h", "naukri_days": 1},
+    "week": {"label": "last week", "linkedin": "past-week", "naukri_days": 7},
+    "month": {"label": "last month", "linkedin": "past-month", "naukri_days": 30},
+}
+
 _GENERIC_TITLE_WORDS = {
     "senior", "junior", "sr", "jr", "lead", "head", "associate", "assistant", "trainee",
     "intern", "executive", "manager", "officer", "engineer", "developer", "specialist",
@@ -75,6 +82,13 @@ class Profile:
     linkedin_queries: list[str] = field(default_factory=list)
     naukri_queries: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=lambda: ["linkedin", "naukri"])
+    posted_within: str = "24h"          # "24h", "week" or "month"
+    posts_per_search: int = 25
+
+    def __post_init__(self):
+        if self.posted_within not in POSTED_WITHIN:
+            self.posted_within = "24h"
+        self.posts_per_search = max(1, min(int(self.posts_per_search or 25), 200))
 
     @classmethod
     def load(cls, path: Path) -> "Profile":
@@ -157,4 +171,8 @@ def to_toml(p: Profile) -> str:
         f"naukri_queries = {arr(p.naukri_queries)}\n"
         f"# Portals to search: linkedin, naukri.\n"
         f"sources = {arr(p.sources)}\n"
+        f"# How far back to look: 24h, week or month.\n"
+        f'posted_within = "{p.posted_within}"\n'
+        f"# Posts / jobs read per search. More finds more but takes longer.\n"
+        f"posts_per_search = {p.posts_per_search}\n"
     )

@@ -81,7 +81,7 @@ async def run_screen(config_path: Path) -> None:
             work = await ctx.new_page()
             try:
                 found = await cli.harvest(work, setup, store, set(profile.sources),
-                                          setup.search.get("limit", 25), log_and_note)
+                                          profile.posts_per_search, log_and_note)
             finally:
                 await work.close()
             new_emails = cli.save_outputs(found, setup.out_dir)

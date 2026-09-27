@@ -55,7 +55,8 @@ def test_generated_queries():
 
 def test_toml_round_trip(tmp_path):
     p = Profile(name="A", role="Product Manager", experience_years=7, locations=["Noida"],
-                skills=["product manager"], exclude_keywords=["project manager"], sources=["naukri"])
+                skills=["product manager"], exclude_keywords=["project manager"], sources=["naukri"],
+                posted_within="week", posts_per_search=40)
     f = tmp_path / "pm.toml"
     f.write_text(to_toml(p))
     assert Profile.load(f) == p
@@ -79,3 +80,22 @@ def test_non_it_examples():
 def test_every_example_profile_loads():
     for path in (ROOT / "examples" / "profiles").glob("*.toml"):
         assert Profile.load(path).role
+
+
+def test_posted_within_maps_to_each_portal():
+    from harvester.profile import POSTED_WITHIN
+    from harvester.sources import linkedin, naukri
+    assert "past-week" in linkedin.search_url("hiring accountant", POSTED_WITHIN["week"]["linkedin"])
+    assert naukri.search_url("Accountant", POSTED_WITHIN["month"]["naukri_days"]).endswith("jobAge=30")
+    assert Profile(name="x", role="y").posted_within == "24h"
+
+
+def test_bad_saved_values_fall_back_safely():
+    p = Profile(name="x", role="y", posted_within="year", posts_per_search=5000)
+    assert (p.posted_within, p.posts_per_search) == ("24h", 200)
+
+
+def test_naukri_page_urls():
+    from harvester.sources import naukri
+    assert naukri.search_url("Sales Executive", 7) == "https://www.naukri.com/sales-executive-jobs?jobAge=7"
+    assert naukri.search_url("Sales Executive", 7, 3) == "https://www.naukri.com/sales-executive-jobs-3?jobAge=7"

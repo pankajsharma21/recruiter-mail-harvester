@@ -1,4 +1,4 @@
-"""LinkedIn: content search for hiring posts from the last 24 hours.
+"""LinkedIn: content search for recent hiring posts (last 24 hours, week or month).
 
 Needs a logged-in session: run `harvest login` once and sign in by hand. The
 password is never seen by this tool; only the browser profile keeps the cookie.
@@ -15,7 +15,7 @@ from playwright.async_api import Page
 from . import Blocked, Post, polite_pause
 
 SEARCH_URL = ("https://www.linkedin.com/search/results/content/"
-              "?keywords={q}&datePosted=%22past-24h%22&sortBy=%22date_posted%22")
+              "?keywords={q}&datePosted=%22{within}%22&sortBy=%22date_posted%22")
 POST = "[role=listitem]"
 
 
@@ -39,13 +39,18 @@ async def _load_more(page: Page, rounds: int) -> None:
         await page.wait_for_timeout(1500)
 
 
-async def posts(page: Page, query: str, limit: int, scroll_rounds: int = 8) -> AsyncIterator[Post]:
-    await page.goto(SEARCH_URL.format(q=quote(query)), wait_until="domcontentloaded")
+def search_url(query: str, within: str = "past-24h") -> str:
+    return SEARCH_URL.format(q=quote(query), within=within)
+
+
+async def posts(page: Page, query: str, limit: int, within: str = "past-24h") -> AsyncIterator[Post]:
+    await page.goto(search_url(query, within), wait_until="domcontentloaded")
     await page.wait_for_timeout(5000)
     if "/login" in page.url or "/authwall" in page.url or "/checkpoint" in page.url:
         raise Blocked("LinkedIn session missing or expired - run `harvest login`")
 
-    await _load_more(page, scroll_rounds)
+    # One wheel round loads roughly three posts; scroll enough to reach the limit.
+    await _load_more(page, min(60, max(8, limit // 3 + 2)))
     await _expand_all(page)
     await page.wait_for_timeout(1000)
 

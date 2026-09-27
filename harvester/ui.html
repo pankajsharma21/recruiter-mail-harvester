@@ -42,7 +42,7 @@
   form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
   label { display: block; font-weight: 600; font-size: 14px; }
   label span { display: block; font-weight: 400; color: var(--muted); font-size: 13px; }
-  input[type=text], input[type=number] { width: 100%; margin-top: 5px; padding: 9px 11px; font: inherit;
+  input[type=text], input[type=number], select { width: 100%; margin-top: 5px; padding: 9px 11px; font: inherit;
            color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
   input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .full { grid-column: 1 / -1; }
@@ -104,6 +104,18 @@
         <span>Comma separated.</span>
         <input type="text" name="exclude_keywords" placeholder="e.g. night shift, commission only">
       </label>
+      <label>Posts from
+        <span>Run daily? Keep 24 hours. First run? Try a week.</span>
+        <select name="posted_within">
+          <option value="24h">Last 24 hours</option>
+          <option value="week">Last week</option>
+          <option value="month">Last month</option>
+        </select>
+      </label>
+      <label>Posts to read per search
+        <span>More finds more, but takes longer. 25 takes a few minutes.</span>
+        <input type="number" name="posts_per_search" min="5" max="200" step="5" value="25">
+      </label>
       <div class="full">
         <label>Search on</label>
         <div class="checks">
@@ -157,6 +169,7 @@ function describe(p) {
   const bits = [p.role];
   if (p.experience_years != null) bits.push(p.experience_years + " yrs");
   bits.push(p.locations && p.locations.length ? p.locations.join(", ") : "any city");
+  if (p.posted_within && p.posted_within !== "24h") bits.push("last " + p.posted_within);
   return bits.join(" · ");
 }
 
@@ -189,6 +202,8 @@ function fill(p) {
   const src = p ? p.sources : ["linkedin", "naukri"];
   form.src_linkedin.checked = src.includes("linkedin");
   form.src_naukri.checked = src.includes("naukri");
+  form.posted_within.value = p ? p.posted_within : "24h";
+  form.posts_per_search.value = p ? p.posts_per_search : 25;
   $("#msg").textContent = "";
 }
 
@@ -197,7 +212,7 @@ $("#newBtn").onclick = () => { if (!busy) { selected = null; fill(null); clearOu
 function setBusy(on) {
   busy = on;
   for (const b of ["#runBtn", "#loginBtn", "#newBtn"]) $(b).disabled = on;
-  for (const i of form.querySelectorAll("input")) i.disabled = on;
+  for (const i of form.querySelectorAll("input, select")) i.disabled = on;
 }
 
 $("#runBtn").onclick = async () => {
@@ -212,6 +227,8 @@ $("#runBtn").onclick = async () => {
     experience_years: exp === "" ? null : Number(exp),
     locations: split(form.locations.value), skills: split(form.skills.value),
     exclude_keywords: split(form.exclude_keywords.value), sources,
+    posted_within: form.posted_within.value,
+    posts_per_search: Math.max(5, Math.min(200, Number(form.posts_per_search.value) || 25)),
   };
   $("#msg").textContent = "";
   setBusy(true);

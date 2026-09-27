@@ -17,7 +17,7 @@ Recruiters post things like *"Hiring Accountant, Tally/GST, 1-3 yrs, Noida, shar
 This tool does that for you:
 
 1. **You describe what you want**: job title, years of experience, cities. The details are saved.
-2. **It searches** LinkedIn posts from the last 24 hours and today's Naukri jobs for that title, in a real Chrome window.
+2. **It searches** LinkedIn posts and Naukri jobs for that title, from the last 24 hours, week or month (your choice), in a real Chrome window.
 3. **It keeps only matching posts**: right job, right experience range, right city. It skips job seekers, US staffing agencies, "job support" spam and jobs abroad.
 4. **It shows the new addresses** with a *Copy all* button. It also saves them to a text file, and remembers them so they are never shown as new again.
 
@@ -64,11 +64,14 @@ The addresses are also saved to `output/<name>/<date>/new_emails.txt`.
 | Cities | Hides posts naming only other cities. Gurgaon = Gurugram, Bangalore = Bengaluru. "Remote" and posts with no city are kept. Leave empty for anywhere. | Delhi, Noida |
 | Words the post must mention | Optional. Leave empty and the job title is used. | tally, gst, accounts |
 | Skip posts that mention | Optional deal-breakers | commission only, night shift |
+| Posts from | How far back to look, on both portals: last 24 hours, last week or last month. Running it daily? Keep 24 hours. First run? Try a week. | Last week |
+| Posts to read per search | More finds more addresses but takes longer. Naukri is read page by page, 20 jobs a page. | 25 |
 | Search on | LinkedIn posts, Naukri jobs, or both | |
 
 ## Good to know
 
 - **Your password is never seen by this tool.** You sign in to LinkedIn yourself, in the tool's own Chrome profile (`~/.local/share/recruiter-mail-harvester/profile`). Your everyday Chrome is not touched.
+- **How far back it looks is up to you.** The default is the last 24 hours, meant for a daily run. The tool remembers every address, so a daily 24-hour run never repeats one. For a first run, pick *Last week* and raise *Posts to read per search*. Naukri had about 16,000 accountant jobs in a week against about 800 in a day.
 - **Run it about once a day.** LinkedIn limits automated use and returns fewer results after several searches in a row. Heavy use can get an account restricted.
 - **Leave the search tab alone** while it works. Naukri refuses hidden (headless) browsers, so the window has to stay visible.
 - **Most Naukri jobs have no email in them.** In testing, about 2 in 30 did. LinkedIn posts are the richer source.
@@ -82,7 +85,7 @@ Everything the screen does is also a command:
 |---|---|
 | `harvest` | Opens the setup screen (same as `harvest ui`) |
 | `harvest run -p priya` | Searches with a saved person's details, no screen. Without `-p`, uses the last person. |
-| `harvest run -p priya --sources naukri --limit 10` | One portal only, 10 posts per search |
+| `harvest run -p priya --sources naukri --limit 10` | One portal only, 10 posts per search (overrides the saved number) |
 | `harvest login` | Sign in to LinkedIn without the screen |
 | `harvest init` | Create a person by answering questions in the terminal |
 | `harvest profiles` | List saved people |
@@ -102,9 +105,11 @@ exclude_keywords = ["commission only"]
 linkedin_queries = []     # empty = made from the job title
 naukri_queries = []
 sources = ["naukri", "linkedin"]
+posted_within = "24h"     # 24h, week or month
+posts_per_search = 25
 ```
 
-Rules that apply to everyone are in [`config.toml`](config.toml): how many posts to read per search, and the labelled patterns that drop US staffing posts, jobs abroad, job seekers and "job support" spam. Every skipped address is saved with the rule *and the words that triggered it*, for example `experience 8-12 yrs`, `location hyderabad` or `job seeker: "#OpenToWork"`. A rule that misfires is easy to spot.
+Rules that apply to everyone are in [`config.toml`](config.toml): the labelled patterns that drop US staffing posts, jobs abroad, job seekers and "job support" spam. Every skipped address is saved with the rule *and the words that triggered it*, for example `experience 8-12 yrs`, `location hyderabad` or `job seeker: "#OpenToWork"`. A rule that misfires is easy to spot.
 
 ## How it works
 
@@ -136,7 +141,7 @@ harvester/
     └── naukri.py     # job search → open each job → description
 examples/profiles/    # sample people, IT and non-IT
 scripts/              # record_demo.py + build_gif.py: regenerate docs/demo.gif
-tests/                # 26 tests, no network needed
+tests/                # 29 tests, no network needed
 ```
 
 The screen is plain HTML shown in the Chrome window Playwright already drives. It talks to Python through Playwright's exposed functions, so there is no web server and no GUI toolkit to install, and it looks the same on Linux, Windows and macOS.
