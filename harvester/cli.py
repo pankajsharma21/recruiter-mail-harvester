@@ -169,15 +169,18 @@ async def sign_in(page, minutes: int = 10) -> bool:
     """Open LinkedIn's login page and wait until the person has signed in by hand.
 
     Waiting for the window to be closed let people close it one step too early,
-    before the session cookie existed. Poll the URL instead: LinkedIn moves to the
-    feed with client-side navigation, which a load-event wait does not see.
+    before the session cookie existed. Watching the URL closed the tab too early
+    the other way: "Join now", a signup or consent page, or any other LinkedIn page
+    that is not /login looked like success. Poll for the `li_at` session cookie,
+    which LinkedIn sets only once someone is actually signed in.
     """
     await page.goto("https://www.linkedin.com/login")
     for _ in range(minutes * 60):
         await asyncio.sleep(1)
         if page.is_closed():
             return False
-        if "linkedin.com" in page.url and not re.search(r"/(login|checkpoint|authwall|uas)", page.url):
+        cookies = await page.context.cookies("https://www.linkedin.com")
+        if any(c["name"] == "li_at" and c["value"] for c in cookies):
             await asyncio.sleep(3)  # let the session cookie reach disk
             return True
     return False
