@@ -44,8 +44,8 @@ POSTS = {
   ],
 }
 
-async def fake_harvest(page, setup, store, sources, limit, log=print):
-    out, src = [], "naukri"
+async def fake_harvest(page, setup, store, sources, limit, log=print, out=None):
+    out, src = (out if out is not None else []), "naukri"
     for item, st in POSTS[setup.profile.role]:
         await asyncio.sleep(0.55)
         if st is None:

@@ -57,6 +57,7 @@ async def run_screen(config_path: Path) -> None:
     profiles_dir.mkdir(exist_ok=True)
     last_file = profiles_dir / ".last"
     closed = asyncio.Event()
+    stop = asyncio.Event()  # set by the Stop button; cleared when a search starts
 
     async with browser(headless=False) as ctx:
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
@@ -77,13 +78,14 @@ async def run_screen(config_path: Path) -> None:
                     blocked.append(line[4:])
                 await log(line)
 
+            stop.clear()
             await log("Searching for " + cli.describe(profile))
             try:
                 work = await ctx.new_page()
                 try:
                     found = await cli.harvest_within(
                         work, setup, store, set(profile.sources), profile.posts_per_search,
-                        log_and_note, timeout=(profile.timeout_minutes * 60) or None)
+                        log_and_note, timeout=(profile.timeout_minutes * 60) or None, stop=stop)
                 finally:
                     if not work.is_closed():
                         await work.close()
@@ -96,6 +98,7 @@ async def run_screen(config_path: Path) -> None:
                     await page.bring_to_front()
                     await page.evaluate("r => window.ui.done(r)", {
                         "found": len(found), "kept": sum(l.kept for l, _ in found),
+                        "stopped": stop.is_set(),
                         "new_emails": new_emails, "rows": rows, "blocked": blocked,
                         "saved_to": _short(setup.out_dir / "new_emails.txt"),
                     })
@@ -116,6 +119,9 @@ async def run_screen(config_path: Path) -> None:
             asyncio.create_task(search(profile_id, profile))
             return {"id": profile_id, "people": _people(profiles_dir)}
 
+        async def harvest_stop() -> None:
+            stop.set()
+
         async def harvest_status() -> bool:
             return await cli.signed_in(ctx)
 
@@ -132,6 +138,7 @@ async def run_screen(config_path: Path) -> None:
         await page.expose_function("harvestRun", harvest_run)
         await page.expose_function("harvestLogin", harvest_login)
         await page.expose_function("harvestStatus", harvest_status)
+        await page.expose_function("harvestStop", harvest_stop)
 
         last = last_file.read_text().strip() if last_file.exists() else None
         boot = (f"<script>window.__PEOPLE__={json.dumps(_people(profiles_dir))};"

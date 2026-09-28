@@ -38,6 +38,8 @@
            border: 1px solid var(--line); background: var(--card); color: var(--text); }
   button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
   button:disabled { opacity: .55; cursor: default; }
+  .progressHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  button.stop { color: var(--bad); border-color: var(--bad); font-weight: 600; }
   .new { width: 100%; margin-top: 4px; }
   form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
   label { display: block; font-weight: 600; font-size: 14px; }
@@ -144,7 +146,10 @@
     </div>
 
     <div id="progress">
-      <h2 id="progressTitle">Searching…</h2>
+      <div class="progressHead">
+        <h2 id="progressTitle">Searching…</h2>
+        <button id="stopBtn" class="stop" type="button">■ Stop</button>
+      </div>
       <p class="hint">A browser tab is doing the searching. Leave it alone; this page updates by itself.</p>
       <div id="log"></div>
     </div>
@@ -224,6 +229,14 @@ function fill(p) {
 
 $("#newBtn").onclick = () => { if (!busy) { selected = null; fill(null); clearOutput(); renderPeople(); form.name.focus(); } };
 
+// Stop is only for a running search: shown when it starts, hidden once it is over.
+function showStop(on) {
+  $("#stopBtn").style.display = on ? "" : "none";
+  $("#stopBtn").disabled = false;
+  $("#stopBtn").textContent = "■ Stop";
+}
+showStop(false);
+
 function setBusy(on) {
   busy = on;
   for (const b of ["#runBtn", "#loginBtn", "#newBtn"]) $(b).disabled = on;
@@ -252,6 +265,7 @@ $("#runBtn").onclick = async () => {
   $("#result").style.display = "none";
   $("#progress").style.display = "block";
   $("#progressTitle").textContent = "Searching…";
+  showStop(true);
   $("#log").textContent = "";
   const saved = await window.harvestRun(data);
   people = saved.people; selected = saved.id; renderPeople();
@@ -280,6 +294,14 @@ $("#loginBtn").onclick = async () => {
   setBusy(false);
 };
 
+// Ends the search early; whatever was found so far is still shown and saved.
+$("#stopBtn").onclick = async () => {
+  $("#stopBtn").disabled = true;
+  $("#stopBtn").textContent = "Stopping…";
+  $("#progressTitle").textContent = "Stopping…";
+  await window.harvestStop();
+};
+
 $("#copyBtn").onclick = () => {
   const t = $("#emails"); t.select(); document.execCommand("copy");
   $("#copyBtn").textContent = "Copied"; setTimeout(() => $("#copyBtn").textContent = "Copy all", 1500);
@@ -289,7 +311,8 @@ $("#copyBtn").onclick = () => {
 window.ui = {
   log(line) { const l = $("#log"); l.textContent += line + "\n"; l.scrollTop = l.scrollHeight; },
   done(r) {
-    $("#progressTitle").textContent = "Finished";
+    $("#progressTitle").textContent = r.stopped ? "Stopped - here is what was found" : "Finished";
+    showStop(false);
     $("#newCount").textContent = r.new_emails.length;
     $("#summary").textContent = `${r.found} found · ${r.kept} matched your details · ${r.new_emails.length} never seen before.`
       + (r.blocked.length ? " Note: " + r.blocked.join(" ") : "");
@@ -303,6 +326,7 @@ window.ui = {
   },
   fail(message) {
     $("#progressTitle").textContent = "Search stopped";
+    showStop(false);
     $("#msg").innerHTML = '<span class="err">' + esc(message) + "</span>";
     setBusy(false);
   },

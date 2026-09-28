@@ -63,3 +63,38 @@ def test_harvest_within_no_timeout_runs_fully(monkeypatch):
     monkeypatch.setattr(cli, "harvest", quick)
     res = asyncio.run(cli.harvest_within(None, None, None, {"linkedin"}, 1, timeout=None))
     assert [l.email for l, _ in res] == ["a@x.com", "b@y.com"]
+
+
+def test_stop_button_ends_the_search_and_keeps_what_was_found(monkeypatch):
+    async def slow(page, setup, store, sources, limit, log=print, out=None):
+        out.append((lead("a@x.com"), True))
+        await asyncio.sleep(5)
+        out.append((lead("b@y.com"), True))
+        return out
+
+    monkeypatch.setattr(cli, "harvest", slow)
+    logs = []
+
+    async def main():
+        stop = asyncio.Event()
+        asyncio.get_running_loop().call_later(0.2, stop.set)  # the person presses Stop
+        return await cli.harvest_within(None, None, None, {"linkedin"}, 1, log=logs.append,
+                                        timeout=None, stop=stop)
+
+    res = asyncio.run(main())
+    assert [l.email for l, _ in res] == ["a@x.com"]
+    assert any(m.startswith("  · Stopped") for m in logs)
+
+
+def test_a_failing_search_still_raises(monkeypatch):
+    async def broken(page, setup, store, sources, limit, log=print, out=None):
+        raise RuntimeError("page changed")
+
+    monkeypatch.setattr(cli, "harvest", broken)
+    try:
+        asyncio.run(cli.harvest_within(None, None, None, {"linkedin"}, 1, timeout=10,
+                                       stop=asyncio.Event()))
+    except RuntimeError as e:
+        assert "page changed" in str(e)
+    else:
+        raise AssertionError("the error was swallowed")

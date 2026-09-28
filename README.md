@@ -65,7 +65,7 @@ A Chrome window opens with the setup screen. It is the tool's own Chrome (its ow
 
 Press **Save & find emails**. Nothing is searched until you press it. A second tab does the searching, which takes a few minutes, and the screen fills in as it goes. **Leave that tab alone** while it works.
 
-To keep it short, set **Stop after** (1 to 20 minutes): when the time is up the search stops and you still get everything found until then. If a search fails, the reason is shown in red under the buttons and you can press the button again.
+To end a search early, press **■ Stop** (next to *Searching…*): it stops within a moment and you still get every address found so far, on screen and in the file. To set a time budget in advance, use **Stop after** (1 to 20 minutes), which works the same way when the time is up. If a search fails, the reason is shown in red under the buttons and you can press the button again.
 
 When it finishes you get the new addresses, a **Copy all** button, and a table of everything found with the reason each skipped one was skipped. The addresses are also saved to `output/<name>/<date>/new_emails.txt`.
 

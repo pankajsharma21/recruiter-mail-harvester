@@ -163,19 +163,30 @@ async def harvest(page, setup: Setup, store: Store, sources: set[str], limit: in
 
 
 async def harvest_within(page, setup: Setup, store: Store, sources: set[str], limit: int,
-                         log=print, timeout: float | None = None) -> list[tuple[Lead, bool]]:
-    """Run harvest, but stop after `timeout` seconds and return whatever was found by then.
-    None or 0 means no limit."""
+                         log=print, timeout: float | None = None,
+                         stop: asyncio.Event | None = None) -> list[tuple[Lead, bool]]:
+    """Run harvest, but end early after `timeout` seconds (None or 0 = no limit) or when
+    `stop` is set (the screen's Stop button), and return whatever was found by then."""
     found: list[tuple[Lead, bool]] = []
-    if not timeout:
-        return await harvest(page, setup, store, sources, limit, log, out=found)
+    job = asyncio.ensure_future(harvest(page, setup, store, sources, limit, log, out=found))
+    stopper = asyncio.ensure_future(stop.wait()) if stop else None
+    waiting = {job, stopper} - {None}
     try:
-        await asyncio.wait_for(
-            harvest(page, setup, store, sources, limit, log, out=found), timeout)
-    except asyncio.TimeoutError:
-        kept = sum(l.kept for l, _ in found)
-        await _maybe_await(log(f"  · Time limit reached - returning {kept} matched of "
-                               f"{len(found)} found so far."))
+        done, _ = await asyncio.wait(waiting, timeout=timeout or None,
+                                     return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        if stopper:
+            stopper.cancel()
+    if job in done:
+        return job.result()  # finished on its own (re-raises if it failed)
+    job.cancel()
+    try:
+        await job
+    except asyncio.CancelledError:
+        pass
+    why = "Stopped" if stop and stop.is_set() else "Time limit reached"
+    kept = sum(l.kept for l, _ in found)
+    await _maybe_await(log(f"  · {why} - returning {kept} matched of {len(found)} found so far."))
     return found
 
 
