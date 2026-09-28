@@ -38,21 +38,58 @@ Playwright uses the Chrome already on your computer, so no extra browser is down
 
 ## Use
 
-```bash
-.venv/bin/harvest
-```
+### 1. Start it
 
-Or, on Linux and macOS, `./run.sh` starts it in the background (log in `logs/harvest.log`) and `./stop.sh` closes it and its Chrome window. Your everyday Chrome is left alone.
+| Your computer | Start | Stop |
+|---|---|---|
+| Linux / macOS, background (easiest) | `./run.sh` | `./stop.sh` |
+| Linux / macOS, in the terminal | `.venv/bin/harvest` | close the Chrome window, or Ctrl+C |
+| Windows | `.venv\Scripts\harvest` | close the Chrome window, or Ctrl+C |
 
-A Chrome window opens with the setup screen.
+A Chrome window opens with the setup screen. It is the tool's own Chrome (its own profile), so your everyday Chrome, its tabs and logins are left alone.
 
-- **First time:** fill in your name, the job you want, experience and cities. Press **Sign in to LinkedIn** once, sign in yourself, and the tab closes on its own. Then press **Save & find emails**.
-- **Next time:** your name is already in the list and ticked. Press **Save & find emails**.
+`./run.sh` returns straight away and keeps the tool running in the background:
+
+- its output goes to `logs/harvest.log` (`tail -f logs/harvest.log` to watch it),
+- running it twice just says *Already running*, since only one copy can use the browser profile,
+- `./stop.sh` closes the tool and its Chrome window, and nothing else.
+
+### 2. Fill in your details
+
+- **First time:** fill in your name, the job you want, experience and cities. Press **Sign in to LinkedIn** once, sign in yourself, and the tab closes on its own. The sign-in is remembered: next time the button shows **✓ Signed in to LinkedIn**.
+- **Several jobs:** type them comma separated in *Job you are looking for*, e.g. `Java Developer, Spring Boot Developer, Backend Engineer`. Each title is searched.
+- **Next time:** your name is already in the list and ticked.
 - **Someone else:** press **+ New person** and fill in their details. Everyone's details, history and results are kept separately.
 
-A second tab does the searching, which takes a few minutes, and the screen fills in as it goes. When it finishes you get the new addresses, a **Copy all** button, and a table of everything found with the reason each skipped one was skipped.
+### 3. Search
 
-The addresses are also saved to `output/<name>/<date>/new_emails.txt`.
+Press **Save & find emails**. Nothing is searched until you press it. A second tab does the searching, which takes a few minutes, and the screen fills in as it goes. **Leave that tab alone** while it works.
+
+To keep it short, set **Stop after** (1 to 20 minutes): when the time is up the search stops and you still get everything found until then. If a search fails, the reason is shown in red under the buttons and you can press the button again.
+
+When it finishes you get the new addresses, a **Copy all** button, and a table of everything found with the reason each skipped one was skipped. The addresses are also saved to `output/<name>/<date>/new_emails.txt`.
+
+### Quick test
+
+A short run to check that everything works, without using up LinkedIn's daily limit:
+
+1. `./run.sh` and wait for the Chrome window.
+2. Press **+ New person**, name `Test`, job `Java Developer, Spring Boot Developer`, *Posts from* **Last 24 hours**, *Posts to read per search* **5**, *Stop after* **1 minute**, and untick **LinkedIn posts** (Naukri only).
+3. Press **Save & find emails**. The log shows `[naukri] Java Developer` and then `[naukri] Spring Boot Developer` (one search per title), or `Time limit reached` after about a minute.
+4. The result box shows the addresses found. Tick *Test* again later and the fields come back as you saved them.
+5. `./stop.sh`. It prints *Recruiter Mail Harvester stopped.*
+
+### If something goes wrong
+
+| What you see | What to do |
+|---|---|
+| `No virtualenv found` | Do the [Install](#install) steps first. |
+| `Already running` but no window | `./stop.sh`, then `./run.sh` again. |
+| No window appears (Linux) | Check `logs/harvest.log`. Over SSH or with no desktop, the window has nowhere to open. `run.sh` uses `DISPLAY=:0` unless you set `DISPLAY` yourself. |
+| Chrome says the profile is in use | A previous Chrome was left open: `./stop.sh` closes it. |
+| `search did not load, skipped` | The site was slow. The run carries on with the next search; try again later. |
+| Naukri shows *Access Denied* | Naukri blocks hidden browsers. Don't use `--headless` for Naukri. |
+| LinkedIn finds very little | LinkedIn gives fewer results after several searches in a day. Try again tomorrow. |
 
 ![The setup screen after a search](docs/screen.png)
 
@@ -102,6 +139,8 @@ The screen saves each person to `profiles/<name>.toml`, which you can also edit 
 [profile]
 name = "Example: Accountant"
 role = "Accountant"
+roles = ["Accountant", "Accounts Executive"]   # every title to search; empty = just role
+timeout_minutes = 0       # stop after N minutes; 0 = no limit
 experience_years = 2
 locations = ["Delhi", "Noida"]
 skills = ["accountant", "accounts", "tally", "gst"]
