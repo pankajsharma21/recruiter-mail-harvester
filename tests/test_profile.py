@@ -122,3 +122,19 @@ def test_naukri_page_urls():
     from harvester.sources import naukri
     assert naukri.search_url("Sales Executive", 7) == "https://www.naukri.com/sales-executive-jobs?jobAge=7"
     assert naukri.search_url("Sales Executive", 7, 3) == "https://www.naukri.com/sales-executive-jobs-3?jobAge=7"
+
+
+def test_quotes_and_backslashes_survive_saving(tmp_path):
+    # Raw text between quotes broke the TOML, and the person vanished from the screen.
+    p = Profile(name='Priya "PJ"', role=r"C\C++ Developer", roles=[r"C\C++ Developer", 'Dev "lead"'],
+                skills=["c#", ".net"], exclude_keywords=['"night shift"', "tab\there", "line\nbreak"])
+    f = tmp_path / "p.toml"
+    f.write_text(to_toml(p))
+    assert Profile.load(f) == p
+
+
+def test_bad_saved_numbers_fall_back(tmp_path):
+    f = tmp_path / "p.toml"
+    f.write_text('[profile]\nname = "x"\nrole = "y"\ntimeout_minutes = "five"\nposts_per_search = "lots"\n')
+    p = Profile.load(f)
+    assert p.timeout_minutes == 0 and p.posts_per_search == 25

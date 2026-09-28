@@ -4,6 +4,24 @@ import re
 from dataclasses import dataclass, field
 
 
+def words_rx(words: list[str], whole: bool = False) -> str:
+    """Regex matching any of `words` at a word start (and, with whole=True, a word end).
+
+    \\b only works next to a letter or digit: "\\b.net" never matched " .NET" after a
+    space. So the boundary is added only on a side that starts/ends with a letter or
+    digit; a symbol such as the "." of ".net" or the "+" of "c++" is its own edge, and
+    ".net" still matches inside "ASP.NET".
+    """
+    def one(w: str) -> str:
+        rx = re.escape(w)
+        if w[:1].isalnum() or w[:1] == "_":
+            rx = r"(?<!\w)" + rx
+        if whole and (w[-1:].isalnum() or w[-1:] == "_"):
+            rx += r"(?!\w)"
+        return rx
+    return "(?:" + "|".join(one(w) for w in words if w) + ")"
+
+
 @dataclass
 class Rules:
     # At least one of these must appear, or the post is off-topic.
@@ -20,7 +38,7 @@ class Rules:
     def __post_init__(self):
         # Leading word boundary only: "qa" must not match "Qatar", but "microservice"
         # should still match "microservices".
-        self._role = (re.compile(r"\b(?:" + "|".join(map(re.escape, self.role_keywords)) + ")", re.I)
+        self._role = (re.compile(words_rx(self.role_keywords), re.I)
                       if self.role_keywords else None)
         self._drops = [(label, re.compile(rx, re.I)) for label, rx in self.drop_patterns.items()]
         self._emails = {e.lower() for e in self.blocked_emails}

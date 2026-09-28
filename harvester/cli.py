@@ -23,7 +23,7 @@ from playwright.async_api import Error as PlaywrightError
 
 from . import extract
 from .browser import browser
-from .filters import Rules
+from .filters import Rules, words_rx
 from .profile import POSTED_WITHIN, Profile, slug, to_toml
 from .sources import Blocked, Post, linkedin, naukri
 from .store import Lead, Store
@@ -57,7 +57,7 @@ def make_setup(cfg: dict, profile_id: str, profile: Profile) -> Setup:
     rules = cfg.get("rules", {})
     drops = dict(rules.get("drop_patterns", {}))
     if profile.exclude_keywords:
-        drops["excluded keyword"] = r"\b(?:" + "|".join(map(re.escape, profile.exclude_keywords)) + r")\b"
+        drops["excluded keyword"] = words_rx(profile.exclude_keywords, whole=True)
     lists = rules.get("lists", {})
     return Setup(profile_id, profile, cfg.get("search", {}), Rules(
         role_keywords=profile.role_keywords(),
@@ -285,7 +285,7 @@ def main(argv: list[str] | None = None) -> None:
 
     r = sub.add_parser("run", help="search the portals")
     r.add_argument("-p", "--profile", help="profile name from profiles/ (default: the last one used)")
-    r.add_argument("--sources", default="naukri,linkedin", help="comma list: naukri,linkedin")
+    r.add_argument("--sources", help="comma list: naukri,linkedin (default: the person's saved choice)")
     r.add_argument("--timeout", type=float, help="stop after N minutes and return what was found (0 = no limit)")
     r.add_argument("--limit", type=int, help="posts per search (overrides the saved value)")
     r.add_argument("--headless", action="store_true", help="hide the browser window (Naukri refuses headless)")
@@ -309,15 +309,20 @@ def main(argv: list[str] | None = None) -> None:
         return asyncio.run(login())
     if args.cmd == "profiles":
         for path in sorted(PROFILES_DIR.glob("*.toml")):
-            p = Profile.load(path)
+            try:
+                p = Profile.load(path)
+            except Exception as e:  # one hand-edited typo should not hide everyone else
+                print(f"{path.stem:22} (cannot read: {e})")
+                continue
             exp = f"{p.experience_years:g} yrs" if p.experience_years is not None else "any exp"
-            print(f"{path.stem:22} {p.role:22} {exp:9} {', '.join(p.locations) or 'any city'}")
+            print(f"{path.stem:22} {', '.join(p.all_roles()):22} {exp:9} {', '.join(p.locations) or 'any city'}")
         return
 
     setup = load(args.config, args.profile)
     store = Store(setup.data_dir / "leads.db")
     if args.cmd == "run":
-        args.sources = {s.strip() for s in args.sources.split(",")}
+        args.sources = ({s.strip() for s in args.sources.split(",") if s.strip()} if args.sources
+                        else set(setup.profile.sources))
         report(asyncio.run(run(args, setup, store)), setup.out_dir)
     elif args.cmd == "scan":
         text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text()

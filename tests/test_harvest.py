@@ -98,3 +98,33 @@ def test_a_failing_search_still_raises(monkeypatch):
         assert "page changed" in str(e)
     else:
         raise AssertionError("the error was swallowed")
+
+
+def test_run_uses_the_persons_saved_sources(tmp_path, monkeypatch):
+    # `harvest run -p NAME` searched both portals even for a Naukri-only person.
+    import shutil
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(cli, "PROFILES_DIR", tmp_path / "profiles")
+    (tmp_path / "profiles").mkdir()
+    from harvester.profile import Profile, to_toml
+    (tmp_path / "profiles" / "n.toml").write_text(to_toml(Profile(name="n", role="Accountant", sources=["naukri"])))
+    shutil.copy(cli.Path(__file__).parents[1] / "config.toml", tmp_path / "config.toml")
+    seen = {}
+
+    async def fake_run(args, setup, store):
+        seen["sources"] = args.sources
+        return []
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    cli.main(["--config", str(tmp_path / "config.toml"), "run", "-p", "n"])
+    assert seen["sources"] == {"naukri"}
+    cli.main(["--config", str(tmp_path / "config.toml"), "run", "-p", "n", "--sources", "linkedin"])
+    assert seen["sources"] == {"linkedin"}
+
+
+def test_excluded_words_with_symbols_still_drop(tmp_path):
+    from harvester.profile import Profile
+    setup = cli.make_setup({}, "x", Profile(name="x", role="Developer", exclude_keywords=[".net", "c++"]))
+    assert setup.rules.check_post("Developer needed, .NET stack") is not None
+    assert setup.rules.check_post("Developer needed, C++ stack") is not None
+    assert setup.rules.check_post("Developer needed, Python stack") is None

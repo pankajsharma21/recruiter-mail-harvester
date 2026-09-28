@@ -32,7 +32,8 @@ async def _expand_all(page: Page) -> None:
 
 async def _load_more(page: Page, rounds: int) -> None:
     # Lazy loading only reacts to real wheel events; window.scrollTo() does nothing.
-    box = page.viewport_size or {"width": 1280, "height": 900}
+    # viewport_size is None when the window sets the size (no_viewport), so ask the page.
+    box = page.viewport_size or await page.evaluate("({width: innerWidth, height: innerHeight})")
     await page.mouse.move(box["width"] / 2, box["height"] / 2)
     for _ in range(rounds):
         await page.mouse.wheel(0, 2500)

@@ -58,6 +58,7 @@ async def run_screen(config_path: Path) -> None:
     last_file = profiles_dir / ".last"
     closed = asyncio.Event()
     stop = asyncio.Event()  # set by the Stop button; cleared when a search starts
+    running: set[asyncio.Task] = set()  # asyncio keeps only weak refs to tasks: hold them here
 
     async with browser(headless=False) as ctx:
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
@@ -69,8 +70,6 @@ async def run_screen(config_path: Path) -> None:
                 await page.evaluate("l => window.ui.log(l)", line)
 
         async def search(profile_id: str, profile: Profile) -> None:
-            setup = cli.make_setup(cfg, profile_id, profile)
-            store = Store(setup.data_dir / "leads.db")
             blocked: list[str] = []
 
             async def log_and_note(line: str) -> None:
@@ -81,6 +80,10 @@ async def run_screen(config_path: Path) -> None:
             stop.clear()
             await log("Searching for " + cli.describe(profile))
             try:
+                # Inside the try, so a failure here also reaches the screen instead of
+                # leaving it on "Searching…" forever.
+                setup = cli.make_setup(cfg, profile_id, profile)
+                store = Store(setup.data_dir / "leads.db")
                 work = await ctx.new_page()
                 try:
                     found = await cli.harvest_within(
@@ -116,7 +119,9 @@ async def run_screen(config_path: Path) -> None:
             (profiles_dir / f"{profile_id}.toml").write_text(to_toml(profile))
             last_file.write_text(profile_id)
             # Answer the page first so it can show the saved person, then search.
-            asyncio.create_task(search(profile_id, profile))
+            task = asyncio.create_task(search(profile_id, profile))
+            running.add(task)
+            task.add_done_callback(running.discard)
             return {"id": profile_id, "people": _people(profiles_dir)}
 
         async def harvest_stop() -> None:

@@ -3,6 +3,7 @@ from pathlib import Path
 from conftest import example
 from harvester.cli import leads_from
 from harvester.sources import Post
+from harvester.filters import Rules
 
 ROOT = Path(__file__).parent.parent
 JAVA = example("java-developer")
@@ -64,3 +65,16 @@ def test_reshared_job_post_is_not_a_job_seeker():
 
 def test_job_seeker_offering_own_resume_still_dropped():
     assert reason("#OpenToWork Java dev, happy to connect and share my resume").startswith("job seeker")
+
+
+def test_role_words_starting_with_a_symbol_match():
+    # \b.net never matched " .NET" after a space, so every .NET post was dropped.
+    from harvester.profile import Profile
+    r = Rules(role_keywords=Profile(name="x", role=".NET Developer").role_keywords())
+    assert r.check_post("Hiring .NET Developer, 4 yrs, share CV") is None
+    assert r.check_post("We need C# .NET Core engineers") is None
+    assert r.check_post("Hiring ASP.NET developer") is None
+    assert r.check_post("Hiring Java developer") == "no matching role"
+    # The start-of-word rule still holds for normal words: "java" is not inside "Kajava".
+    assert Rules(role_keywords=["java"]).check_post("Kajava hiring") == "no matching role"
+    assert Rules(role_keywords=["java"]).check_post("Hiring Java devs") is None

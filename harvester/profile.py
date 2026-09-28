@@ -71,6 +71,14 @@ def canonical_city(name: str) -> str:
     return name
 
 
+def _number(value, default: float) -> float:
+    """A saved number, or the default when a hand-edited file holds something else."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 @dataclass
 class Profile:
     name: str
@@ -90,8 +98,8 @@ class Profile:
     def __post_init__(self):
         if self.posted_within not in POSTED_WITHIN:
             self.posted_within = "24h"
-        self.posts_per_search = max(1, min(int(self.posts_per_search or 25), 200))
-        self.timeout_minutes = max(0.0, float(self.timeout_minutes or 0))
+        self.posts_per_search = max(1, min(int(_number(self.posts_per_search, 25)), 200))
+        self.timeout_minutes = max(0.0, _number(self.timeout_minutes, 0))
 
     def all_roles(self) -> list[str]:
         """Every job title to search for: `roles` when set, else the single `role`,
@@ -166,15 +174,33 @@ def slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "profile"
 
 
+def _toml_str(s: str) -> str:
+    """A TOML string. Pasting raw text between quotes broke the file (and made the
+    person vanish from the screen) as soon as a field held a quote or a backslash."""
+    out = []
+    for ch in str(s):
+        if ch in '"\\':
+            out.append("\\" + ch)
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
 def to_toml(p: Profile) -> str:
     def arr(xs):
-        return "[" + ", ".join(f'"{x}"' for x in xs) + "]"
+        return "[" + ", ".join(_toml_str(x) for x in xs) + "]"
     exp = "" if p.experience_years is None else f"experience_years = {p.experience_years:g}\n"
     return (
         "# Search profile. Edit any field; empty lists mean \"no restriction\".\n"
         "[profile]\n"
-        f'name = "{p.name}"\n'
-        f'role = "{p.role}"\n'
+        f"name = {_toml_str(p.name)}\n"
+        f"role = {_toml_str(p.role)}\n"
         f"# Every job title to search for. Empty = just the role above.\n"
         f"roles = {arr(p.roles)}\n"
         f"{exp}"
@@ -190,7 +216,7 @@ def to_toml(p: Profile) -> str:
         f"# Portals to search: linkedin, naukri.\n"
         f"sources = {arr(p.sources)}\n"
         f"# How far back to look: 24h, week or month.\n"
-        f'posted_within = "{p.posted_within}"\n'
+        f"posted_within = {_toml_str(p.posted_within)}\n"
         f"# Posts / jobs read per search. More finds more but takes longer.\n"
         f"posts_per_search = {p.posts_per_search}\n"
         f"# Stop the search after this many minutes and return what was found. 0 = no limit.\n"
