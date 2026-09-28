@@ -148,7 +148,7 @@
     <div id="progress">
       <div class="progressHead">
         <h2 id="progressTitle">Searching…</h2>
-        <button id="stopBtn" class="stop" type="button">■ Stop</button>
+        <button id="stopBtn" class="stop" type="button" title="Stop now to change your details; what was found so far is kept">■ Stop &amp; edit</button>
       </div>
       <p class="hint">A browser tab is doing the searching. Leave it alone; this page updates by itself.</p>
       <div id="log"></div>
@@ -233,7 +233,7 @@ $("#newBtn").onclick = () => { if (!busy) { selected = null; fill(null); clearOu
 function showStop(on) {
   $("#stopBtn").style.display = on ? "" : "none";
   $("#stopBtn").disabled = false;
-  $("#stopBtn").textContent = "■ Stop";
+  $("#stopBtn").textContent = "■ Stop & edit";
 }
 showStop(false);
 
@@ -323,6 +323,14 @@ window.ui = {
        <td>${esc(x.author)}</td><td>${esc(x.source)}</td></tr>`).join("");
     $("#result").style.display = "block";
     setBusy(false);
+    if (r.stopped) {
+      // Stopped to change something: send them back to the form, ready to edit.
+      $("#msg").textContent = "Stopped. Change anything above (a job title, a city, a word) and press "
+        + "Save & find emails again. The " + r.new_emails.length + " addresses found so far are saved "
+        + "and will not be shown as new next time.";
+      form.scrollIntoView({behavior: "smooth", block: "start"});
+      form.role.focus({preventScroll: true});
+    }
   },
   fail(message) {
     $("#progressTitle").textContent = "Search stopped";
