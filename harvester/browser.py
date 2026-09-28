@@ -18,8 +18,13 @@ async def browser(headless: bool = False):
             PROFILE_DIR,
             channel="chrome",
             headless=headless,
-            viewport={"width": 1280, "height": 900},
-            args=["--disable-blink-features=AutomationControlled"],
+            # Let the page match the real window instead of a locked 1280x900 viewport:
+            # on a shorter screen a fixed viewport hides the bottom of the page with no
+            # scrollbar. With no_viewport the window scrolls normally. (Headless has no
+            # window, so it keeps a fixed size there.)
+            no_viewport=not headless,
+            viewport={"width": 1280, "height": 900} if headless else None,
+            args=["--disable-blink-features=AutomationControlled", "--start-maximized"],
         )
         try:
             yield ctx

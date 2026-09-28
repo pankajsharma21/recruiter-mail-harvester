@@ -122,16 +122,18 @@ def report(leads: list[tuple[Lead, bool]], out: Path) -> None:
 
 
 def describe(p: Profile) -> str:
-    return (f"{p.name} · {p.role}"
+    return (f"{p.name} · {', '.join(p.all_roles())}"
             + (f" · {p.experience_years:g} yrs" if p.experience_years is not None else "")
             + (f" · {', '.join(p.locations)}" if p.locations else " · any city")
             + f" · {POSTED_WITHIN[p.posted_within]['label']}")
 
 
 async def harvest(page, setup: Setup, store: Store, sources: set[str], limit: int,
-                  log=print) -> list[tuple[Lead, bool]]:
-    """Search every chosen source with the profile's queries. `log` receives progress lines."""
-    found: list[tuple[Lead, bool]] = []
+                  log=print, out: list | None = None) -> list[tuple[Lead, bool]]:
+    """Search every chosen source with the profile's queries. `log` receives progress lines.
+    Appends to `out` if given, so a caller that cancels this on a timeout still keeps
+    everything found before the cutoff."""
+    found: list[tuple[Lead, bool]] = out if out is not None else []
     p = setup.profile
     plan = [
         ("naukri", naukri, p.naukri_search(), {"days": POSTED_WITHIN[p.posted_within]["naukri_days"]}),
@@ -160,6 +162,23 @@ async def harvest(page, setup: Setup, store: Store, sources: set[str], limit: in
     return found
 
 
+async def harvest_within(page, setup: Setup, store: Store, sources: set[str], limit: int,
+                         log=print, timeout: float | None = None) -> list[tuple[Lead, bool]]:
+    """Run harvest, but stop after `timeout` seconds and return whatever was found by then.
+    None or 0 means no limit."""
+    found: list[tuple[Lead, bool]] = []
+    if not timeout:
+        return await harvest(page, setup, store, sources, limit, log, out=found)
+    try:
+        await asyncio.wait_for(
+            harvest(page, setup, store, sources, limit, log, out=found), timeout)
+    except asyncio.TimeoutError:
+        kept = sum(l.kept for l, _ in found)
+        await _maybe_await(log(f"  · Time limit reached - returning {kept} matched of "
+                               f"{len(found)} found so far."))
+    return found
+
+
 async def _maybe_await(x):
     if asyncio.iscoroutine(x):
         await x
@@ -169,8 +188,10 @@ async def run(args, setup: Setup, store: Store) -> list[tuple[Lead, bool]]:
     print("Profile:", describe(setup.profile))
     async with browser(headless=args.headless) as ctx:
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-        return await harvest(page, setup, store, args.sources,
-                             args.limit or setup.profile.posts_per_search)
+        minutes = args.timeout if args.timeout is not None else setup.profile.timeout_minutes
+        return await harvest_within(page, setup, store, args.sources,
+                                    args.limit or setup.profile.posts_per_search,
+                                    timeout=(minutes * 60) or None)
 
 
 async def signed_in(ctx) -> bool:
@@ -254,6 +275,7 @@ def main(argv: list[str] | None = None) -> None:
     r = sub.add_parser("run", help="search the portals")
     r.add_argument("-p", "--profile", help="profile name from profiles/ (default: the last one used)")
     r.add_argument("--sources", default="naukri,linkedin", help="comma list: naukri,linkedin")
+    r.add_argument("--timeout", type=float, help="stop after N minutes and return what was found (0 = no limit)")
     r.add_argument("--limit", type=int, help="posts per search (overrides the saved value)")
     r.add_argument("--headless", action="store_true", help="hide the browser window (Naukri refuses headless)")
 

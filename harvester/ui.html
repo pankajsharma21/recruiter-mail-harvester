@@ -87,7 +87,8 @@
         <input type="text" name="name" placeholder="e.g. Priya" required>
       </label>
       <label>Job you are looking for
-        <input type="text" name="role" placeholder="e.g. Accountant, Sales Executive, Java Developer" required>
+        <span>One title, or several separated by commas. Each one is searched for.</span>
+        <input type="text" name="role" placeholder="e.g. Java Developer, Spring Boot Developer" required>
       </label>
       <label>Years of experience
         <span>Leave empty to see every level.</span>
@@ -116,6 +117,17 @@
       <label>Posts to read per search
         <span>More finds more, but takes longer. 25 takes a few minutes.</span>
         <input type="number" name="posts_per_search" min="5" max="200" step="5" value="25">
+      </label>
+      <label>Stop after
+        <span>Return the emails found so far by this time.</span>
+        <select name="timeout_minutes">
+          <option value="0">No limit</option>
+          <option value="1">1 minute</option>
+          <option value="2">2 minutes</option>
+          <option value="5">5 minutes</option>
+          <option value="10">10 minutes</option>
+          <option value="20">20 minutes</option>
+        </select>
       </label>
       <div class="full">
         <label>Search on</label>
@@ -167,7 +179,7 @@ const join = (a) => (a || []).join(", ");
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function describe(p) {
-  const bits = [p.role];
+  const bits = [p.roles && p.roles.length ? p.roles.join(", ") : p.role];
   if (p.experience_years != null) bits.push(p.experience_years + " yrs");
   bits.push(p.locations && p.locations.length ? p.locations.join(", ") : "any city");
   if (p.posted_within && p.posted_within !== "24h") bits.push("last " + p.posted_within);
@@ -195,7 +207,7 @@ function clearOutput() {
 function fill(p) {
   $("#formTitle").textContent = p ? `Details for ${p.name}` : "New person";
   form.name.value = p ? p.name : "";
-  form.role.value = p ? p.role : "";
+  form.role.value = p ? join(p.roles && p.roles.length ? p.roles : [p.role]) : "";
   form.experience_years.value = p && p.experience_years != null ? p.experience_years : "";
   form.locations.value = p ? join(p.locations) : "";
   form.skills.value = p ? join(p.skills) : "";
@@ -205,6 +217,8 @@ function fill(p) {
   form.src_naukri.checked = src.includes("naukri");
   form.posted_within.value = p ? p.posted_within : "24h";
   form.posts_per_search.value = p ? p.posts_per_search : 25;
+  const mins = String(p ? p.timeout_minutes || 0 : 0);
+  form.timeout_minutes.value = [...form.timeout_minutes.options].some(o => o.value === mins) ? mins : "0";
   $("#msg").textContent = "";
 }
 
@@ -218,18 +232,20 @@ function setBusy(on) {
 
 $("#runBtn").onclick = async () => {
   const sources = [form.src_linkedin.checked && "linkedin", form.src_naukri.checked && "naukri"].filter(Boolean);
-  if (!form.name.value.trim() || !form.role.value.trim()) {
+  const roles = [...new Set(split(form.role.value))];
+  if (!form.name.value.trim() || !roles.length) {
     $("#msg").innerHTML = '<span class="err">Please fill in Name and Job.</span>'; return;
   }
   if (!sources.length) { $("#msg").innerHTML = '<span class="err">Pick LinkedIn, Naukri or both.</span>'; return; }
   const exp = form.experience_years.value.trim();
   const data = {
-    id: selected, name: form.name.value.trim(), role: form.role.value.trim(),
+    id: selected, name: form.name.value.trim(), role: roles[0], roles,
     experience_years: exp === "" ? null : Number(exp),
     locations: split(form.locations.value), skills: split(form.skills.value),
     exclude_keywords: split(form.exclude_keywords.value), sources,
     posted_within: form.posted_within.value,
     posts_per_search: Math.max(5, Math.min(200, Number(form.posts_per_search.value) || 25)),
+    timeout_minutes: Number(form.timeout_minutes.value) || 0,
   };
   $("#msg").textContent = "";
   setBusy(true);
@@ -283,6 +299,11 @@ window.ui = {
       `<tr><td>${esc(x.email)}</td><td class="${x.kept ? "ok" : "no"}">${esc(x.tag)}</td>
        <td>${esc(x.author)}</td><td>${esc(x.source)}</td></tr>`).join("");
     $("#result").style.display = "block";
+    setBusy(false);
+  },
+  fail(message) {
+    $("#progressTitle").textContent = "Search stopped";
+    $("#msg").innerHTML = '<span class="err">' + esc(message) + "</span>";
     setBusy(false);
   },
 };

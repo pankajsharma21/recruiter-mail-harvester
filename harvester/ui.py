@@ -78,24 +78,34 @@ async def run_screen(config_path: Path) -> None:
                 await log(line)
 
             await log("Searching for " + cli.describe(profile))
-            work = await ctx.new_page()
             try:
-                found = await cli.harvest(work, setup, store, set(profile.sources),
-                                          profile.posts_per_search, log_and_note)
-            finally:
-                await work.close()
-            new_emails = cli.save_outputs(found, setup.out_dir)
-            rows = [{"email": l.email, "kept": l.kept, "author": l.author, "source": l.source,
-                     "tag": ("new" if new else "already seen") if l.kept else l.status}
-                    for l, new in found]
-            rows.sort(key=lambda r: (not r["kept"], r["tag"] != "new"))
-            if not page.is_closed():
-                await page.bring_to_front()
-                await page.evaluate("r => window.ui.done(r)", {
-                    "found": len(found), "kept": sum(l.kept for l, _ in found),
-                    "new_emails": new_emails, "rows": rows, "blocked": blocked,
-                    "saved_to": _short(setup.out_dir / "new_emails.txt"),
-                })
+                work = await ctx.new_page()
+                try:
+                    found = await cli.harvest_within(
+                        work, setup, store, set(profile.sources), profile.posts_per_search,
+                        log_and_note, timeout=(profile.timeout_minutes * 60) or None)
+                finally:
+                    if not work.is_closed():
+                        await work.close()
+                new_emails = cli.save_outputs(found, setup.out_dir)
+                rows = [{"email": l.email, "kept": l.kept, "author": l.author, "source": l.source,
+                         "tag": ("new" if new else "already seen") if l.kept else l.status}
+                        for l, new in found]
+                rows.sort(key=lambda r: (not r["kept"], r["tag"] != "new"))
+                if not page.is_closed():
+                    await page.bring_to_front()
+                    await page.evaluate("r => window.ui.done(r)", {
+                        "found": len(found), "kept": sum(l.kept for l, _ in found),
+                        "new_emails": new_emails, "rows": rows, "blocked": blocked,
+                        "saved_to": _short(setup.out_dir / "new_emails.txt"),
+                    })
+            except Exception as e:
+                # A scrape can fail many ways (login wall, changed page, closed tab).
+                # Report it on the screen instead of leaving the button stuck.
+                print(f"  ! Search stopped: {e}")
+                if not page.is_closed():
+                    await page.bring_to_front()
+                    await page.evaluate("m => window.ui.fail(m)", f"Search stopped: {e}")
 
         async def harvest_run(data: dict) -> dict:
             profile = _profile_from(data)

@@ -7,3 +7,6 @@ data/
 output/
 # Each person's saved details and harvested addresses are their own data.
 /profiles/
+# Runtime files from run.sh / stop.sh
+/logs/
+.harvest.pid

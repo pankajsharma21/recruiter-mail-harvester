@@ -79,6 +79,8 @@ class Profile:
     locations: list[str] = field(default_factory=list)   # empty = anywhere
     skills: list[str] = field(default_factory=list)      # a post must mention one
     exclude_keywords: list[str] = field(default_factory=list)
+    roles: list[str] = field(default_factory=list)       # every job title to search for
+    timeout_minutes: float = 0                            # stop after N minutes; 0 = no limit
     linkedin_queries: list[str] = field(default_factory=list)
     naukri_queries: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=lambda: ["linkedin", "naukri"])
@@ -89,6 +91,13 @@ class Profile:
         if self.posted_within not in POSTED_WITHIN:
             self.posted_within = "24h"
         self.posts_per_search = max(1, min(int(self.posts_per_search or 25), 200))
+        self.timeout_minutes = max(0.0, float(self.timeout_minutes or 0))
+
+    def all_roles(self) -> list[str]:
+        """Every job title to search for: `roles` when set, else the single `role`,
+        so old one-title profiles keep working unchanged."""
+        titles = self.roles or ([self.role] if self.role else [])
+        return list(dict.fromkeys(t.strip() for t in titles if t and t.strip()))
 
     @classmethod
     def load(cls, path: Path) -> "Profile":
@@ -100,12 +109,16 @@ class Profile:
     def linkedin_search(self) -> list[str]:
         if self.linkedin_queries:
             return self.linkedin_queries
-        q = [f"hiring {self.role} share resume", f"{self.role} hiring email"]
-        q += [f"{s} hiring share resume" for s in self.skills[:1] if s.lower() not in self.role.lower()]
-        return q
+        roles = self.all_roles()
+        q = [f"hiring {r} share resume" for r in roles]
+        if roles:
+            q.append(f"{roles[0]} hiring email")
+        joined = " ".join(roles).lower()
+        q += [f"{s} hiring share resume" for s in self.skills[:1] if s.lower() not in joined]
+        return list(dict.fromkeys(q))
 
     def naukri_search(self) -> list[str]:
-        return self.naukri_queries or [self.role]
+        return self.naukri_queries or self.all_roles()
 
     # --- filters -----------------------------------------------------------
 
@@ -116,9 +129,12 @@ class Profile:
         """
         if self.skills:
             return self.skills
-        words = [w for w in re.findall(r"[a-z0-9+#.]+", self.role.lower())
-                 if len(w) > 1 and w not in _GENERIC_TITLE_WORDS]
-        return list(dict.fromkeys([self.role.lower(), *words]))
+        words: list[str] = []
+        for r in self.all_roles():
+            words.append(r.lower())
+            words += [w for w in re.findall(r"[a-z0-9+#.]+", r.lower())
+                      if len(w) > 1 and w not in _GENERIC_TITLE_WORDS]
+        return list(dict.fromkeys(words))
 
     def check_experience(self, text: str) -> str | None:
         if self.experience_years is None:
@@ -159,6 +175,8 @@ def to_toml(p: Profile) -> str:
         "[profile]\n"
         f'name = "{p.name}"\n'
         f'role = "{p.role}"\n'
+        f"# Every job title to search for. Empty = just the role above.\n"
+        f"roles = {arr(p.roles)}\n"
         f"{exp}"
         f"# Cities you would work in. A post naming only other cities is dropped.\n"
         f"locations = {arr(p.locations)}\n"
@@ -175,4 +193,6 @@ def to_toml(p: Profile) -> str:
         f'posted_within = "{p.posted_within}"\n'
         f"# Posts / jobs read per search. More finds more but takes longer.\n"
         f"posts_per_search = {p.posts_per_search}\n"
+        f"# Stop the search after this many minutes and return what was found. 0 = no limit.\n"
+        f"timeout_minutes = {p.timeout_minutes:g}\n"
     )

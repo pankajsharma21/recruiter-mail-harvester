@@ -53,10 +53,33 @@ def test_generated_queries():
     assert PM.profile.naukri_search() == ["Product Manager"]
 
 
+def test_multiple_roles_drive_queries_and_keywords():
+    p = Profile(name="x", role="Java Developer",
+                roles=["Java Developer", "Spring Boot Developer", "Backend Engineer"])
+    # One search per title, plus one extra angle on the first.
+    assert p.linkedin_search() == [
+        "hiring Java Developer share resume",
+        "hiring Spring Boot Developer share resume",
+        "hiring Backend Engineer share resume",
+        "Java Developer hiring email",
+    ]
+    assert p.naukri_search() == ["Java Developer", "Spring Boot Developer", "Backend Engineer"]
+    # A post is kept if it mentions any title's words.
+    assert "spring" in p.role_keywords() and "backend" in p.role_keywords()
+
+
+def test_single_role_still_works_without_roles_list():
+    p = Profile(name="x", role="Accountant")
+    assert p.all_roles() == ["Accountant"]
+    assert p.naukri_search() == ["Accountant"]
+    assert p.linkedin_search() == ["hiring Accountant share resume", "Accountant hiring email"]
+
+
 def test_toml_round_trip(tmp_path):
     p = Profile(name="A", role="Product Manager", experience_years=7, locations=["Noida"],
                 skills=["product manager"], exclude_keywords=["project manager"], sources=["naukri"],
-                posted_within="week", posts_per_search=40)
+                posted_within="week", posts_per_search=40,
+                roles=["Product Manager", "Product Owner"], timeout_minutes=5)
     f = tmp_path / "pm.toml"
     f.write_text(to_toml(p))
     assert Profile.load(f) == p

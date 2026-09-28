@@ -42,6 +42,8 @@ Playwright uses the Chrome already on your computer, so no extra browser is down
 .venv/bin/harvest
 ```
 
+Or, on Linux and macOS, `./run.sh` starts it in the background (log in `logs/harvest.log`) and `./stop.sh` closes it and its Chrome window. Your everyday Chrome is left alone.
+
 A Chrome window opens with the setup screen.
 
 - **First time:** fill in your name, the job you want, experience and cities. Press **Sign in to LinkedIn** once, sign in yourself, and the tab closes on its own. Then press **Save & find emails**.
@@ -59,13 +61,14 @@ The addresses are also saved to `output/<name>/<date>/new_emails.txt`.
 | Field | What it does | Example |
 |---|---|---|
 | Name | Whose details these are | Priya |
-| Job you are looking for | Used for the searches and to check each post | Accountant |
+| Job you are looking for | Used for the searches and to check each post. Several titles, comma separated, are each searched. | Accountant, or Java Developer, Spring Boot Developer |
 | Years of experience | Hides posts asking for a range you are far from ("8-10 yrs" when you have 2). One year of slack either way. Posts that don't say are kept. Leave empty to see all. | 2 |
 | Cities | Hides posts naming only other cities. Gurgaon = Gurugram, Bangalore = Bengaluru. "Remote" and posts with no city are kept. Leave empty for anywhere. | Delhi, Noida |
 | Words the post must mention | Optional. Leave empty and the job title is used. | tally, gst, accounts |
 | Skip posts that mention | Optional deal-breakers | commission only, night shift |
 | Posts from | How far back to look, on both portals: last 24 hours, last week or last month. Running it daily? Keep 24 hours. First run? Try a week. | Last week |
 | Posts to read per search | More finds more addresses but takes longer. Naukri is read page by page, 20 jobs a page. | 25 |
+| Stop after | Time budget: the search stops here and returns whatever it found so far. Handy with several titles. | No limit, or 1 to 20 min |
 | Search on | LinkedIn posts, Naukri jobs, or both | |
 
 ## Good to know
@@ -86,6 +89,7 @@ Everything the screen does is also a command:
 | `harvest` | Opens the setup screen (same as `harvest ui`) |
 | `harvest run -p priya` | Searches with a saved person's details, no screen. Without `-p`, uses the last person. |
 | `harvest run -p priya --sources naukri --limit 10` | One portal only, 10 posts per search (overrides the saved number) |
+| `harvest run -p priya --timeout 2` | Stop after 2 minutes and keep what was found (overrides the saved limit) |
 | `harvest login` | Sign in to LinkedIn without the screen |
 | `harvest init` | Create a person by answering questions in the terminal |
 | `harvest profiles` | List saved people |
